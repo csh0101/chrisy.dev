@@ -1,8 +1,8 @@
-# [chrisy.dev](https://chrisy.dev)
+# csh0101.cc
 
 [中文](./README_CN.md)
 
-Hi, I'm Chrisy — a software engineer who writes code and takes photos.
+Hi, I'm Amos, also writing as csh0101 — an AI Infra and cloud native builder.
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat&logo=nextdotjs)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-087ea4?style=flat&logo=react)](https://react.dev)
@@ -11,7 +11,7 @@ Hi, I'm Chrisy — a software engineer who writes code and takes photos.
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages-f38020?style=flat&logo=cloudflare)](https://pages.cloudflare.com)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat)](./LICENSE)
 
-![screenshot](./docs/chrisy.dev.png)
+![screenshot](./docs/csh0101.cc.png)
 
 ## Tech Stack
 

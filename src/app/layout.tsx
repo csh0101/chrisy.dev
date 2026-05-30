@@ -18,19 +18,19 @@ export const viewport: Viewport = {
 }
 
 export const metadata: Metadata = {
-    metadataBase: new URL('https://chrisy.dev'),
+    metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://csh0101.cc'),
     title: {
-        default: 'Chrisy - Software Engineer',
-        template: '%s | Chrisy'
+        default: 'csh0101 - AI Infra & 云原生专家',
+        template: '%s | csh0101'
     },
-    description: "Hi, I'm Chrisy, a software engineer who loves building things.",
+    description: "恭华早修居余位 楼台晚证失道果",
     keywords: [
-        'Chrisy', 'Software Engineer', 'Backend Developer', 'Photography',
-        'Java', 'TypeScript', 'React', 'Next.js', 'Node.js'
+        'csh0101', 'Amos', 'AI Infra', '云原生', 'BigData',
+        'Program Language', 'Cloud Native', 'Kubernetes', 'Infrastructure'
     ],
-    authors: [{ name: 'Chrisy', url: 'https://chrisy.dev' }],
-    creator: 'Chrisy',
-    publisher: 'Chrisy',
+    authors: [{ name: 'Amos', url: process.env.NEXT_PUBLIC_SITE_URL ?? 'https://csh0101.cc' }],
+    creator: 'csh0101',
+    publisher: 'csh0101',
 
     alternates: {
         canonical: '/',
@@ -55,7 +55,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
     return (
-        <html lang="en" className='no-scrollbar' suppressHydrationWarning>
+        <html lang="zh-CN" className='no-scrollbar' suppressHydrationWarning>
         <body className={ clsx(
             "bg-theme-light dark:bg-theme-dark transition-colors duration-300", maple.className
         ) }>

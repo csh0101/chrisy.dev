@@ -12,23 +12,23 @@ export default function Hero() {
             <div className="flex items-center gap-4 mb-10 translate-x-1">
                 <span className="h-px w-12 bg-zinc-600"></span>
                 <span className="text-[12px] font-bold uppercase tracking-[0.2em] text-gray-400">
-                    <span className="inline-block sm:inline sm:w-full">SOFTWARE ENGINEER 软件工程师</span>
+                    <span className="inline-block sm:inline sm:w-full">AI INFRA AI 基础设施</span>
                     <span className="hidden sm:inline-block mx-2">/</span>
-                    <span className="inline-block sm:inline sm:w-full">PHOTOGRAPHER 摄影爱好者</span>
+                    <span className="inline-block sm:inline sm:w-full">CLOUD NATIVE 云原生</span>
                 </span>
             </div>
 
             <h1 className={ clsx("italic text-[clamp(2.8rem,10vw,4.5rem)] lg:text-[clamp(4.5rem,6.5vw,7.5rem)] leading-[0.9] mb-6 group select-none relative", nunito.className) }>
                 <div className="text-neutral-800 dark:text-white cursor-default tracking-wider font-black flex flex-col lg:flex-row items-center lg:items-end justify-start gap-4 lg:gap-6">
                     <div className="flex items-center gap-1.5 lg:gap-4 whitespace-nowrap">
-                        CODE <span className="text-blue-400 text-[0.85em] inline-block translate-y-[-0.05em] mx-0.5">&</span>BEYOND
+                        BUILD <span className="text-blue-400 text-[0.85em] inline-block translate-y-[-0.05em] mx-0.5">&</span>BEYOND
                     </div>
                     <Image src={ pin } alt={ 'pinned' } width={ 220 } className="w-36 lg:w-48 xl:w-55 h-auto object-contain mb-2 lg:mb-4 opacity-90"/>
                 </div>
                 <div className="italic font-normal tracking-tighter cursor-default flex items-center my-4 sm:my-6 md:my-8 lg:my-12">
                     <div className={clsx("transition-all duration-300 opacity-30 cursor-pointer tracking-wider font-medium", maple.className,
                         "[-webkit-text-stroke:1px_rgba(0,0,0,0.6)] dark:[-webkit-text-stroke:1px_rgba(255,255,255,0.6)] text-transparent",
-                        "hover:drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] hover:opacity-90")}>lens.
+                        "hover:drop-shadow-[0_0_12px_rgba(255,255,255,0.8)] hover:opacity-90")}>dreams.
                     </div>
 
                     <div className="hidden lg:flex items-center gap-3 not-italic">
@@ -36,15 +36,15 @@ export default function Hero() {
                             <Target size={18} className="text-blue-500"/>
                         </div>
                         <div className="flex flex-col">
-                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest leading-none">Focus Status</span>
-                            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-1">Locked</span>
+                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest leading-none">Infra Status</span>
+                            <span className="text-[10px] font-bold text-emerald-500 uppercase tracking-widest mt-1">Composing</span>
                         </div>
                     </div>
                 </div>
 
                 <div className="mt-4 flex items-center gap-4">
                     <div className="h-px w-8 bg-blue-600/50"></div>
-                    <span className="text-xl lg:text-2xl font-light tracking-[0.8em] text-zinc-500 uppercase">结构与光影</span>
+                    <span className="text-xl lg:text-2xl font-light tracking-[0.8em] text-zinc-500 uppercase">架构与筑梦</span>
                 </div>
             </h1>
 
@@ -52,12 +52,12 @@ export default function Hero() {
                 <div className="lg:col-span-5 space-y-12">
                     <div className="space-y-6">
                         <p className="text-xl text-zinc-500 font-normal leading-snug">
-                            你好，我是 <span className="dark:text-yellow-300 text-yellow-400 font-extrabold text-lg">Chrisy</span>
+                            你好，我是 <span className="dark:text-yellow-300 text-yellow-400 font-extrabold text-lg">csh0101</span>
                         </p>
                         <p className="text-base text-zinc-500 leading-relaxed max-w-md">
-                            一名软件工程师 <LineDivider/> 工作时敲键盘，闲暇时按快门 ：)
+                            AI Infra 与云原生专家 <LineDivider/> Program Language / 云原生 / BigData / AI Infra
                             <span className="block mt-4 text-zinc-700 italic">
-                                Solving problems with code, exploring the world through the lens.
+                                恭华早修居余位，楼台晚证失道果。
                             </span>
                         </p>
                     </div>
@@ -67,7 +67,7 @@ export default function Hero() {
                 <div className="lg:col-span-7 relative">
                     <div className="absolute -left-12 top-0 hidden lg:block">
                         <span className="[writing-mode:vertical-lr] text-[9px] font-bold uppercase tracking-[1em] text-zinc-800 select-none">
-                          PERSPECTIVE & PRECISION
+                          DREAM & INFRASTRUCTURE
                         </span>
                     </div>
 
@@ -95,7 +95,7 @@ export default function Hero() {
                                     <span className="w-5 shrink-0 text-right text-zinc-700">01</span>
                                     <span className="text-green-400">➜</span>
                                     <span className="text-blue-400">~</span>
-                                    <span className="text-zinc-600 italic">// Hello</span>
+                                    <span className="text-zinc-600 italic">// Dream Builder</span>
                                 </div>
                                 <div className="flex gap-4">
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">02</span>
@@ -107,19 +107,19 @@ export default function Hero() {
                                 <div className="flex gap-4 whitespace-nowrap">
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">03</span>
                                     <span className="text-zinc-400 pl-8">role:</span>
-                                    <span className="text-emerald-400">"Software Engineer"</span>
+                                    <span className="text-emerald-400">"AI Infra & Cloud Native Expert"</span>
                                     <span className="text-zinc-500">,</span>
                                 </div>
                                 <div className="flex gap-4 whitespace-nowrap">
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">04</span>
                                     <span className="text-zinc-400 pl-8">stack:</span>
-                                    <span className="text-emerald-400">["Java", "TypeScript", "Node.js"]</span>
+                                    <span className="text-emerald-400">["Program Language", "Cloud Native", "BigData", "AI Infra"]</span>
                                     <span className="text-zinc-500">,</span>
                                 </div>
                                 <div className="flex gap-4 whitespace-nowrap">
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">05</span>
-                                    <span className="text-zinc-400 pl-8">passion:</span>
-                                    <span className="text-emerald-400">"Photography (Sony α7M4)"</span>
+                                    <span className="text-zinc-400 pl-8">vision:</span>
+                                    <span className="text-emerald-400">"筑梦缔造者"</span>
                                 </div>
                                 <div className="flex gap-4">
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">06</span>

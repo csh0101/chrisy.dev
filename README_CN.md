@@ -1,6 +1,6 @@
-# [chrisy.dev](https://chrisy.dev)
+# csh0101.cc
 
-这里是 Chrisy，一个写代码也爱拍照片的人。
+这里是csh0101，Amos。关注 Program Language、云原生、BigData 与 AI Infra，做一个筑梦缔造者。
 
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?style=flat&logo=nextdotjs)](https://nextjs.org)
 [![React](https://img.shields.io/badge/React-19-087ea4?style=flat&logo=react)](https://react.dev)
@@ -9,7 +9,7 @@
 [![Cloudflare](https://img.shields.io/badge/Cloudflare-Pages-f38020?style=flat&logo=cloudflare)](https://pages.cloudflare.com)
 [![License](https://img.shields.io/badge/license-MIT-green?style=flat)](./LICENSE)
 
-![screenshot](./docs/chrisy.dev.png)
+![screenshot](./docs/csh0101.cc.png)
 
 ## 技术栈
 

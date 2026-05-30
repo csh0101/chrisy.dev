@@ -4,19 +4,22 @@ import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 
 export default function SplashScreen() {
-    const [show, setShow] = useState(true);
+    const [show, setShow] = useState(false);
     const [isFading, setIsFading] = useState(false);
 
     useEffect(() => {
         let isMounted = true;
+        setShow(true);
+
         const hideSplash = () => {
             if (!isMounted) return;
             setIsFading(true);
             setTimeout(() => setShow(false), 500);
         };
-        document.fonts.ready.then(() => {
-            setTimeout(hideSplash, 600);
-        });
+
+        document.fonts.ready
+            .then(() => setTimeout(hideSplash, 600))
+            .catch(hideSplash);
 
         const fallbackTimeout = setTimeout(hideSplash, 5000);
 
@@ -41,7 +44,7 @@ export default function SplashScreen() {
                 </div>
                 <div className="flex items-center text-slate-800 dark:text-slate-200 mt-2 text-xl font-semibold">
                     <span className="text-emerald-600 dark:text-emerald-400 mr-2">~</span>
-                    chrisy.dev
+                    csh0101.cc
                     <span className="ml-1 inline-block w-2 h-5 bg-slate-800 dark:bg-slate-200 animate-pulse"></span>
                 </div>
             </div>

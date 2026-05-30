@@ -60,7 +60,7 @@ export default function LatestPost({ posts }: { posts: Post[] }) {
                             <div className="flex items-center gap-2 py-8 md:py-0">
                                 <Terminal className="text-indigo-500" size={ 12 }/>
                                 <span className="text-[12px] font-mono tracking-wider text-zinc-500 dark:text-zinc-400 lowercase">
-                                    ~/chrisy/blog/archive
+                                    ~/csh0101/blog/archive
                                 </span>
                             </div>
                         </div>

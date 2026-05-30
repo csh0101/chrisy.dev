@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import logo from '@/images/logo.png';
+import logo from '@/images/artlogo.jpg';
 import Theme from "@/components/ui/theme";
 import { AnimatePresence, motion } from "framer-motion";
 import { useState } from "react";
@@ -29,7 +29,7 @@ export default function Header() {
                                 />
                             </div>
                             <span className="text-md md:text-lg font-extrabold text-neutral-800 dark:text-neutral-100 tracking-tight transition-all">
-                                Chrisy<span className="bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-blue-400 dark:from-blue-500 dark:to-cyan-400">.dev</span>
+                                csh0101<span className="bg-clip-text text-transparent bg-linear-to-r from-blue-600 to-blue-400 dark:from-blue-500 dark:to-cyan-400">.cc</span>
                             </span>
                         </Link>
                     </div>

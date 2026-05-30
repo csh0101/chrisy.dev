@@ -14,16 +14,16 @@ export default function Contact() {
     const links = [
         {
             name: 'GitHub',
-            href: 'https://github.com/chriy',
-            detail: 'Building systems and contributing to open source.',
+            href: 'https://github.com/csh0101',
+            detail: 'Building AI infrastructure, cloud native systems, and useful abstractions.',
             className: "hover:border-zinc-200 hover:bg-zinc-50/50 dark:hover:border-zinc-800 dark:hover:bg-zinc-800/10",
             iconBg: "bg-neutral-100 text-neutral-900 dark:bg-neutral-900 dark:text-white",
             icon: <FaGithub size={32}/>
         },
         {
             name: 'Email',
-            href: 'mailto:hi@chrisy.dev',
-            detail: 'Drop me a message. Let\'s chat over coffee.',
+            href: 'mailto:csh031027asd@gmail.com',
+            detail: 'Drop me a message. Let\'s talk about infra, systems, and ideas.',
             className: "hover:border-amber-200 hover:bg-amber-50/50 dark:hover:border-amber-900 dark:hover:bg-amber-900/10",
             icon: <Mail size={32}/>,
             iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-500"
@@ -31,7 +31,7 @@ export default function Contact() {
         {
             name: "Based in UTC+08:00",
             href: "#",
-            detail: "Focused on logic, curious about the world.",
+            detail: "Focused on infrastructure, language, data, and AI.",
             className: "hover:border-purple-200 hover:bg-purple-50/50 dark:hover:border-purple-900 dark:hover:bg-purple-900/10",
             iconBg: "bg-purple-50 text-purple-600 dark:bg-purple-900/20 dark:text-purple-400",
             icon: <MapPin size={32}/>
@@ -46,7 +46,7 @@ export default function Contact() {
                     <div className="flex items-center gap-4 w-full justify-start py-8">
                         <Radio className="text-blue-500" size={18}/>
                         <span className={'text-[10px] font-mono tracking-[0.8em] uppercase dark:text-zinc-600 text-zinc-400'}>
-                        ping chrisy.dev
+                        ping csh0101.cc
                     </span>
                     </div>
                     <h2 className={clsx('flex items-center gap-4 whitespace-nowrap text-4xl md:text-4xl font-bold tracking-tight font-mono dark:text-white text-zinc-900', maple.className)}>
@@ -56,10 +56,10 @@ export default function Contact() {
                         <span className="text-blue-500 animate-pulse">_</span>
                     </h2>
                     <p className={clsx('italic mt-8 text-md max-w-sm dark:text-zinc-500 text-zinc-400', maple.className)}>
-                        Logic in code, magic in lenses.
+                        Infra in code, dreams in systems.
                     </p>
                     <p className={clsx(' mt-8 text-md max-w-sm dark:text-zinc-500 text-zinc-400', maple.className)}>
-                        捕捉逻辑的严谨，记录光影的瞬间。欢迎随时交流。
+                        以云原生构筑底座，以 AI Infra 连接想象。欢迎随时交流。
                     </p>
                 </div>
                 <div className="flex-1 flex flex-col justify-between py-16">

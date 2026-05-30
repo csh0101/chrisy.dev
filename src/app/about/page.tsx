@@ -1,4 +1,4 @@
-import { Bot, Camera, Cpu } from "lucide-react";
+import { Bot, Cpu } from "lucide-react";
 import { clsx } from "clsx";
 import { maple, nunito } from "@/lib/font";
 import type { ReactNode } from "react";
@@ -8,7 +8,7 @@ const stack = [
     { key: "content", value: "\"MDX\"" },
     { key: "style", value: "\"Tailwind CSS\"" },
     { key: "motion", value: "\"Framer Motion\"" },
-    { key: "focus", value: "[\"Backend\", \"AI\", \"Photography\"]" },
+    { key: "focus", value: "[\"Program Language\", \"Cloud Native\", \"BigData\", \"AI Infra\"]" },
 ];
 
 export default function About() {
@@ -25,21 +25,20 @@ export default function About() {
                 <div className="lg:col-span-5">
                     <div className="sticky top-24 border-l border-zinc-200 pl-6 dark:border-zinc-900">
                         <p className={ clsx("mb-5 text-xs font-bold uppercase tracking-[0.35em] text-blue-500", maple.className) }>
-                            about chrisy
+                            about csh0101
                         </p>
                         <h1 className={ clsx(
                             "max-w-sm text-4xl font-black leading-snug tracking-tight text-zinc-900 dark:text-white md:text-5xl",
                             nunito.className
                         ) }>
-                            Notes, and a little light.
+                            Infra, language, and dreams.
                         </h1>
                         <p className="mt-7 max-w-md text-base leading-8 text-zinc-600 dark:text-zinc-400">
-                            2021 年毕业于长沙大学 (Changsha University) 计算机专业。目前以后端开发为主，同时也能独立做前端开发。
+                            我是 Amos，也用「csh0101」这个名字记录技术与思考。关注 Program Language、云原生、BigData 与 AI Infra。
                         </p>
                         <p className="mt-7 max-w-md text-base leading-8 text-zinc-600 dark:text-zinc-400">
-                            在碎片化的时代，留一个安静的角落，记录技术上的坑与路，以及生活中的一些光影。
+                            恭华早修居余位，楼台晚证失道果。在复杂系统之间，做一个筑梦缔造者。
                         </p>
-                        <PixelCamera/>
                         <SiteTimeline/>
                     </div>
                 </div>
@@ -47,14 +46,14 @@ export default function About() {
                 <div className="lg:col-span-7 space-y-12">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                         <AboutBlock
-                            icon={ <Camera size={ 20 }/> }
-                            title="Beyond Code"
-                            body="键盘之外的另一种视角。摄影无关标签，而是观察世界的方式：捕捉光线、秩序与偶然，并保持一点耐心。"
+                            icon={ <Cpu size={ 20 }/> }
+                            title="Cloud Native"
+                            body="关注基础设施的可演进性：从容器、调度、可观测到平台工程，让系统稳定承载更大的想象。"
                         />
                         <AboutBlock
                             icon={ <Bot size={ 20 }/> }
-                            title="AI Now"
-                            body="拥抱 AI 对开发的重塑。我更愿将它看作新的工作界面：帮助探索问题、验证灵感，而非替代思考。"
+                            title="AI Infra"
+                            body="把模型、数据、算力与工程链路连接起来，让 AI 不只停留在 demo，而是进入可持续迭代的系统。"
                         />
                     </div>
 
@@ -90,7 +89,7 @@ export default function About() {
                             </CodeLine>
                             <div className="mt-8 flex items-center gap-3 border-t border-white/10 pt-5 text-[10px] font-bold uppercase tracking-widest text-zinc-600">
                                 <Cpu size={ 14 }/>
-                                built with curiosity, shipped with care
+                                built with discipline, shipped with imagination
                             </div>
                         </div>
                     </div>
@@ -163,28 +162,28 @@ const CodeLine = ({ number, children }: {
 const timeline = [
     {
         year: "2018",
-        title: "手写 Markdown",
-        desc: "大学时代，用编辑器手写 Markdown，本地预览便是全部。",
+        title: "语言与系统",
+        desc: "从程序语言与工程基础开始，理解抽象如何落到真实系统里。",
     },
     {
         year: "2019",
-        title: "Hexo 时代",
-        desc: "接触 Hexo，第一次感受到静态博客的生成魔力，开始折腾主题与部署。",
+        title: "云原生视角",
+        desc: "开始关注容器、Kubernetes 与基础设施平台化，追求稳定、弹性与可维护。",
     },
     {
         year: "2021",
-        title: "自建 & 丢失",
-        desc: "购入云服务器，自建 Halo 博客。忘记续费，数据全部丢失。",
+        title: "数据与平台",
+        desc: "深入 BigData 与工程链路，把数据处理、服务治理和平台能力串联起来。",
     },
     {
         year: "2023",
-        title: "GitHub Pages",
-        desc: "重新出发，用 GitHub Pages 托管，简单可靠，但可定制性有限。",
+        title: "AI Infra",
+        desc: "面向模型、数据、算力和应用交付，探索 AI 时代的基础设施形态。",
     },
     {
         year: "2026",
-        title: "Cloudflare 全家桶",
-        desc: "全面迁移至 Cloudflare：Pages 部署、DNS、CDN、边缘函数，一站全托管。",
+        title: "筑梦缔造者",
+        desc: "持续构建可被复用、可被信任、也能承载想象力的技术系统。",
     },
 ];
 
@@ -192,7 +191,7 @@ const SiteTimeline = () => {
     return (
         <div className="mt-14 select-none" aria-hidden="true">
             <p className={ clsx("mb-6 text-xs font-bold uppercase tracking-[0.35em] text-blue-500", maple.className) }>
-                site evolution
+                dream evolution
             </p>
             <div className="relative border-l border-zinc-200 dark:border-zinc-900 space-y-8">
                 { timeline.map((item, _) => (
