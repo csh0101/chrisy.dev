@@ -1,0 +1,99 @@
+<svg width="1400" height="820" viewBox="0 0 1400 820" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1400" height="820" rx="34" fill="#07111f"/>
+  <defs>
+    <linearGradient id="bg" x1="96" y1="56" x2="1336" y2="758" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102a43"/>
+      <stop offset="0.52" stop-color="#0b1d33"/>
+      <stop offset="1" stop-color="#151123"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="132" y1="88" x2="1270" y2="702" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#ff8f52"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="167" y1="156" x2="1140" y2="686" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#73d7ff"/>
+      <stop offset="1" stop-color="#6f8cff"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.43 0 0 0 0 0.78 0 0 0 0 1 0 0 0 0.45 0"/>
+      <feBlend in="SourceGraphic" mode="screen"/>
+    </filter>
+    <style>
+      .title { font: 700 34px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .sub { font: 500 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #b7c6d8; }
+      .label { font: 700 21px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #f8fafc; }
+      .small { font: 500 15px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; fill: #c7d2fe; }
+      .tiny { font: 600 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; fill: #fbd38d; }
+      .box { fill: rgba(15, 23, 42, 0.82); stroke: rgba(148, 163, 184, 0.38); stroke-width: 2; }
+      .pod { fill: rgba(14, 165, 233, 0.14); stroke: #67e8f9; stroke-width: 2; }
+      .repo { fill: rgba(251, 191, 36, 0.13); stroke: #fbbf24; stroke-width: 2; }
+      .arrow { stroke: url(#amber); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowHead); }
+      .blueArrow { stroke: url(#blue); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; marker-end: url(#arrowHeadBlue); }
+    </style>
+    <marker id="arrowHead" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M2 2L12 7L2 12" stroke="#ffbd68" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <marker id="arrowHeadBlue" markerWidth="14" markerHeight="14" refX="10" refY="7" orient="auto">
+      <path d="M2 2L12 7L2 12" stroke="#7dd3fc" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect x="28" y="28" width="1344" height="764" rx="28" fill="url(#bg)" stroke="rgba(255,255,255,0.08)" stroke-width="2"/>
+  <circle cx="1156" cy="154" r="160" fill="#38bdf8" opacity="0.08"/>
+  <circle cx="268" cy="652" r="190" fill="#f59e0b" opacity="0.07"/>
+  <text x="72" y="92" class="title">K8s Runtime Facts + Git Static Facts = Agent Closed Loop</text>
+  <text x="72" y="126" class="sub">Tell the agent an HTTP path; let the cluster and repo annotate the truth.</text>
+
+  <rect x="70" y="200" width="245" height="125" rx="18" class="box"/>
+  <text x="96" y="242" class="label">Human Intent</text>
+  <text x="96" y="274" class="small">domain + HTTP path</text>
+  <text x="96" y="300" class="tiny">"debug /api/checkout"</text>
+
+  <rect x="418" y="180" width="274" height="165" rx="22" class="box"/>
+  <text x="448" y="224" class="label">Coding Agent</text>
+  <text x="448" y="256" class="small">kubectl, dig, nc, logs</text>
+  <text x="448" y="282" class="small">and small scripts</text>
+  <text x="448" y="314" class="tiny">no README worship required</text>
+
+  <rect x="815" y="150" width="445" height="230" rx="26" class="box"/>
+  <text x="845" y="194" class="label">Cascade Query</text>
+  <text x="845" y="230" class="small">kubectl describe httproute</text>
+  <text x="845" y="258" class="small">kubectl describe svc</text>
+  <text x="845" y="286" class="small">kubectl describe pod</text>
+  <text x="845" y="324" class="tiny">follow the object graph, not the rumor graph</text>
+  <g transform="translate(1112 208)" filter="url(#glow)">
+    <rect x="0" y="0" width="92" height="76" rx="14" class="pod"/>
+    <circle cx="46" cy="38" r="20" stroke="#67e8f9" stroke-width="4"/>
+    <path d="M46 14V62M22 38H70M30 22L62 54M62 22L30 54" stroke="#67e8f9" stroke-width="3" stroke-linecap="round"/>
+  </g>
+
+  <rect x="82" y="475" width="365" height="190" rx="26" class="box"/>
+  <text x="112" y="520" class="label">Pod Annotations</text>
+  <text x="112" y="556" class="small">git.repo: github.com/csh0101/app</text>
+  <text x="112" y="584" class="small">git.commit: 8f3a2c1</text>
+  <text x="112" y="624" class="tiny">the pod quietly carries its birth certificate</text>
+
+  <rect x="540" y="486" width="300" height="174" rx="24" class="repo"/>
+  <text x="570" y="530" class="label">/tmp Workspace</text>
+  <text x="570" y="566" class="small">git clone repo</text>
+  <text x="570" y="594" class="small">git checkout commit</text>
+  <text x="570" y="632" class="tiny">static facts arrive on disk</text>
+
+  <rect x="930" y="474" width="360" height="204" rx="26" class="box"/>
+  <text x="960" y="518" class="label">Patch + Deploy</text>
+  <text x="960" y="554" class="small">analyze code and runtime state</text>
+  <text x="960" y="582" class="small">produce fix</text>
+  <text x="960" y="610" class="small">kubectl apply / rollout restart</text>
+  <text x="960" y="648" class="tiny">the loop closes before the coffee gets cold</text>
+
+  <path d="M316 262C350 260 380 260 414 260" class="arrow"/>
+  <path d="M694 260C740 246 774 232 812 220" class="arrow"/>
+  <path d="M1038 382C978 442 922 482 842 540" class="blueArrow"/>
+  <path d="M814 574C846 574 888 574 926 574" class="arrow"/>
+  <path d="M540 574C500 574 484 574 450 574" class="blueArrow"/>
+  <path d="M265 475C306 414 358 354 418 304" class="blueArrow"/>
+  <path d="M1168 474C1168 420 1128 392 1068 378" class="arrow"/>
+
+  <rect x="489" y="694" width="420" height="56" rx="18" fill="rgba(15,23,42,0.75)" stroke="rgba(251,191,36,0.42)" stroke-width="2"/>
+  <text x="525" y="730" class="small">Static truth says what was built. Runtime truth says what is happening.</text>
+</svg>

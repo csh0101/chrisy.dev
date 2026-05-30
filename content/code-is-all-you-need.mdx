@@ -1,11 +1,117 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'Code Is All You Need',
     date: '2026-05-30',
     address: 'csh0101.cc',
-    summary: 'AI 时代的开发应该以 code 为唯一事实。',
-    tags: [ 'AI Infra', 'Code' ]
+    summary: '代码是静态事实，运行时状态是动态事实。Coding Agent 真正需要的是一条能自更新的事实链。',
+    tags: [ 'AI Infra', 'Coding Agent', 'Kubernetes' ]
 }
 
 # Code Is All You Need
 
-AI 时代，开发不该停留在对话、截图、文档和口头共识里。真正能被验证、复现、部署和传承的，只有 code。Prompt 可以启发方向，模型可以加速推演，但系统最终必须落到仓库、测试、接口、配置和运行状态中。Code 是事实，也是边界；它记录决策，暴露问题，承载迭代。把 code 作为唯一事实，才能让 AI 协作从灵感变成工程。
+我越来越觉得，AI 时代的开发不应该再把「文档写得像碑文一样庄严」当成最高目标。碑文当然有用，至少能证明某个时期大家确实认真想过。但生产环境不是博物馆，凌晨三点报警响起来的时候，应用不会因为 README 写得工整就自动恢复，Pod 也不会因为架构图画得很圆润就突然健康。
+
+真正有意思的变化是：Coding Agent 的长时间推理和持续工作能力已经很强了。Codex、Claude Code 这类工具不只是会补几行代码，它们开始能读仓库、跑命令、追日志、写脚本、进容器、改配置，再把结果反馈给下一轮判断。也就是说，它们不是在「读说明书」，而是在「认识现场」。
+
+<Figure
+    src="/articles/code-is-all-you-need/agent-night-ops.png"
+    alt="Coding agent working in a cloud native operations room"
+    caption="一个理想中的深夜排障现场：不是求神拜 README，而是让事实自己发光。"
+/>
+
+## 人如何操作一个从未认识过的东西
+
+从哲学上讲，人面对一个从来没见过的东西，第一反应并不是等待完整文档降临，而是用已有经验去试探它：摸一摸边界，观察反馈，建立模型，再修正模型。小孩第一次见门把手不会先找 RFC，工程师第一次接手系统也不会真的相信 Confluence 的最后更新时间。
+
+今天很多人推崇的文档化，本质上只是把某个时间点的应用状态投影到文字里。它很像一张旧地图：能告诉你当时的河流大概往哪边流，但不能保证现在桥还在，路还通，旁边的服务没有被某位热心同事改名成 `new-new-final-v2`。
+
+这不是说文档没用。文档适合解释意图、背景、约束和历史包袱。但如果要让 Coding Agent 知道 `know how` 和 `do what`，它需要的不是一段静态叙述，而是一条可验证的事实链。
+
+## 静态事实与动态事实
+
+我想把这件事拆成两类事实：
+
+- 代码是静态事实。仓库、commit、测试、配置、接口定义，说明系统被构造成了什么样。
+- 运行时状态是动态事实。Pod、Service、HTTPRoute、日志、指标、网络探测、磁盘占用，说明系统此刻正在怎样呼吸。
+
+只有静态事实，很容易陷入「代码看起来很合理，但线上就是炸」的礼貌困境。只有动态事实，又容易变成「日志很多、CPU 很忙、大家都很慌，但没人知道这个镜像到底从哪次提交来的」。两者合在一起，才接近生产环境里那个真实的状态机。
+
+<Figure
+    src="/articles/code-is-all-you-need/static-dynamic-facts.png"
+    alt="Static code facts and dynamic runtime facts forming a feedback loop"
+    caption="静态事实给出来源，动态事实给出现场。Agent 站在中间，终于不用靠猜。"
+/>
+
+这也是为什么「以 code 为唯一事实」不是一句口号。更准确地说，code 是能被追溯和修改的静态事实；runtime 是能被观测和验证的动态事实。Coding Agent 真正强大的地方，是它可以在这两者之间来回穿梭，并且每一次穿梭都更新自己的判断。
+
+文档是一张照片。代码和运行时状态，则像两台不同角度的摄像机。照片能帮你回忆，摄像机能告诉你现在谁在动。
+
+## K8s 里的自更新闭环
+
+假设我们在 Kubernetes 里给每个 Pod 加上 Git 信息：
+
+```yaml
+metadata:
+  annotations:
+    git.repo: "https://github.com/csh0101/example-service"
+    git.commit: "8f3a2c1"
+```
+
+这两个 annotation 看起来很小，但它们相当于给每个运行中的 Pod 塞了一张出生证明。它告诉 Agent：我不是凭空长出来的，我来自这个 repo，这个 commit。
+
+于是，当你知道一个应用域名，并且想调试某个 HTTP path 时，你不需要先给 Agent 讲半小时祖传背景。你可以直接说：
+
+> 帮我调试 `https://api.example.com/v1/order/create` 这个接口，最近 500 变多了。
+
+然后 Agent 可以沿着真实对象一路向下查：
+
+```bash
+dig api.example.com
+kubectl describe httproute order-api
+kubectl describe svc order-api
+kubectl describe pod order-api-xxxxx
+kubectl logs order-api-xxxxx
+kubectl exec order-api-xxxxx -- nc -vz dependency 8080
+```
+
+如果需要，它甚至可以自己写一个小 Python 脚本放进容器里跑，检查某个配置文件、请求某个内部 endpoint、统计某个目录的文件大小。README 通常不会写「请在凌晨三点用 `ncdu` 看一下缓存目录是不是悄悄长胖了」，但 Agent 可以在现场把这件事做出来。
+
+拿到 Pod annotation 之后，它就能把对应仓库拉到 `/tmp`：
+
+```bash
+cd /tmp
+git clone https://github.com/csh0101/example-service
+cd example-service
+git checkout 8f3a2c1
+```
+
+此时 Agent 同时拥有两种事实：
+
+- 运行时告诉它：请求打到了哪个 route、哪个 svc、哪个 pod，现场日志和网络状态是什么。
+- 代码告诉它：这个 pod 来自哪份实现，依赖怎么连，异常可能从哪里冒出来。
+
+接下来就不是玄学排障了。Agent 可以读代码、复现路径、修改实现、更新镜像或配置，再通过 `kubectl apply`、rollout 或 GitOps 流程让系统进入下一轮状态。新的运行时状态又会反过来验证这次修改。
+
+<Figure
+    src="/articles/code-is-all-you-need/k8s-agent-loop.svg"
+    alt="Kubernetes debugging loop from domain to HTTPRoute, Service, Pod, Git repo and deployment"
+    caption="从域名到 Pod，从 Pod 到 repo/commit，再从代码回到集群。闭环一旦形成，Agent 就不再只是聊天窗口。"
+/>
+
+## 文档不是王座，事实才是
+
+我并不反对文档。好的文档像路牌，能省很多时间。但路牌不能代替道路，尤其不能代替正在施工、正在堵车、正在被某个配置项悄悄改变方向的道路。
+
+AI 时代更适合的工程原则也许是：
+
+- 意图写进文档，事实留在系统里。
+- 每个运行单元都能追溯到代码来源。
+- 每次排障都能从动态事实回到静态事实。
+- 每次修改都能重新进入运行时验证。
+
+当这条链路成立，Coding Agent 的工作方式就会变成自更新的。它不是靠记忆某份文档来理解系统，而是不断用工具读取现场，用代码解释现场，用修改改变现场，再用新的现场校验自己。
+
+所以我说 **Code Is All You Need**，不是因为世界上只剩代码，咖啡和监控大屏都可以下岗；而是因为在生产环境里，真正能穿透幻觉、穿透过期文档、穿透口头传说的，是可追溯的 code 和可观测的 runtime。
+
+静态事实给方向，动态事实给反馈。Agent 夹在中间，终于可以像一个真正的工程师那样工作：先看现场，再动手，最后让系统自己证明对错。
