@@ -99,6 +99,105 @@ git checkout 8f3a2c1
     caption="从域名到 Pod，从 Pod 到 repo/commit，再从代码回到集群。闭环一旦形成，Agent 就不再只是聊天窗口。"
 />
 
+## 协作开发：先别开会，先让 Pod 把身份证掏出来
+
+这个思路继续往前走，其实就不只是排障了，而是协作开发的基础设施。
+
+多个项目一起开发时，大家最痛苦的地方经常不是写代码，而是问路。前端同学说「我打了这个 URL」，后端同学说「这个应该不是我」，平台同学说「你们先确认一下流量有没有进网关」，最后会议室里每个人都很认真，只有系统本人沉默不语，像一位掌握全部真相但不爱发言的老员工。
+
+那我们不如让系统多说一点。
+
+除了 `git.repo` 和 `git.commit`，最便宜、最有效的一条信息就是：
+
+```yaml
+metadata:
+  labels:
+    project: ml-platform
+    app: feature-store
+    component: api
+    env: dev
+  annotations:
+    agent.csh0101.dev/git-repo: "https://github.com/csh0101/feature-store"
+    agent.csh0101.dev/git-commit: "8f3a2c1"
+    agent.csh0101.dev/owner: "ai-infra"
+    agent.csh0101.dev/provides: "feature-store-api"
+    agent.csh0101.dev/depends-on: "redis,model-registry"
+    agent.csh0101.dev/openapi: "openapi.yaml"
+```
+
+`project: ml-platform` 看起来朴素得像工牌夹里的白底照片，但它非常关键。它给 Agent 一个协作边界：把这个项目相关的 Pod、Service、HTTPRoute、Ingress 先拉出来，不要一上来就在整个集群里进行考古式散步。
+
+```bash
+kubectl get pods -A -l project=ml-platform
+kubectl get svc -A -l project=ml-platform
+kubectl get httproute -A
+kubectl get ingress -A
+```
+
+这时候 Agent 能做的事情就很有意思了。它可以从前端项目开始，看 `dist`、环境变量、构建产物和 API 封装，找出页面实际会请求哪些 URL。然后顺着域名、path、HTTPRoute 或 Ingress 往下走，找到 Service，再通过 selector 找到 Pod，最后从 Pod annotation 拿到 repo 和 commit。
+
+于是，一个请求路径就从「大家凭印象聊聊」变成了「按运行时对象逐层展开」：
+
+```text
+frontend dist
+  -> https://api.example.com/v1/features
+  -> HTTPRoute / Ingress
+  -> Service feature-store-api
+  -> Pod feature-store-api-xxxxx
+  -> git.repo + git.commit
+  -> source code in /tmp
+```
+
+这就很适合多个 Coding Agent 协作。一个 Agent 看前端请求，一个 Agent 看 API 服务，一个 Agent 看依赖的 Redis、模型仓库、消息队列，另一个 Agent 专门盯 rollout 和日志。它们不是在会议里抢麦，而是在同一张事实地图上分头搜索。
+
+<Figure
+    src="/articles/code-is-all-you-need/agent-meeting-map.png"
+    alt="Coding agent presenting a service dependency map before a software meeting"
+    caption="理想会议：大家还没开始回忆往事，Agent 已经把调用图端上来了。"
+/>
+
+这里最重要的不是 annotation 写得多豪华，而是让它足够小、足够稳定、足够可查询。不要把 annotation 写成新一代 README。README 过期已经够让人伤心了，不要让 Pod 也背上写小作文的命运。
+
+我倾向于这样分层：
+
+- labels 用来快速筛选，比如 `project`、`app`、`component`、`env`。
+- annotations 用来放 Agent 需要追溯的事实，比如 repo、commit、owner、provides、depends-on、openapi。
+- repo 里放更完整的契约，比如 OpenAPI、ADR、架构说明和测试。
+- runtime 用 `kubectl`、logs、metrics、network probe 去验证真实状态。
+
+这样一来，K8s 就不只是部署平台了，它会变成一张低成本的协作知识图谱。不是那种需要专人维护、半年后没人敢打开的知识图谱，而是随着部署自然更新的图谱。每个 Pod 出生时都带着项目、来源、身份、依赖和负责人的线索。Agent 扫一眼，就知道它是谁、从哪里来、要跟谁说话、出了事大概该找谁。
+
+<Figure
+    src="/articles/code-is-all-you-need/pod-with-paperwork.png"
+    alt="A Kubernetes pod carrying annotations like paperwork while a coding agent scans it"
+    caption="一个合格的 Pod，不仅要会跑，还要带齐证件。否则 Agent 也只能礼貌地问：您哪位？"
+/>
+
+这会极大改变协作开发的会议形态。以前开会是：
+
+```text
+这个接口谁写的？
+这个服务部署在哪？
+前端到底打到哪个域名？
+这个 path 最后进了哪个 Pod？
+线上现在跑的是哪个 commit？
+```
+
+以后开会可以变成：
+
+```text
+Agent 已经拉出 project=ml-platform 的运行图。
+这个 URL 进了 feature-store-api。
+当前 Pod 来自 commit 8f3a2c1。
+前端 dist 里确实在请求 /v1/features。
+依赖 model-registry 和 redis。
+我们现在讨论：这个调用边界是否设计错了？
+```
+
+前者是在找手电筒，后者是在看地图。不是说人不重要了，而是人终于不用把宝贵的脑力花在「这条线到底连到哪里」这种考古活动上。
+
+这也是我觉得 `project` annotation/label 很关键的原因。它是最小协作单位。只要这个边界清晰，Agent 就能快速把相关对象收拢起来，再把代码、流量、依赖、owner 拼成一个可以讨论的上下文。协作开发最怕上下文散落一地，而这个方法相当于给上下文装了一个拉链。
+
 ## 文档不是王座，事实才是
 
 我并不反对文档。好的文档像路牌，能省很多时间。但路牌不能代替道路，尤其不能代替正在施工、正在堵车、正在被某个配置项悄悄改变方向的道路。
@@ -107,6 +206,8 @@ AI 时代更适合的工程原则也许是：
 
 - 意图写进文档，事实留在系统里。
 - 每个运行单元都能追溯到代码来源。
+- 每个项目边界都能被 label 快速收拢。
+- 每条调用链都能从入口追到代码。
 - 每次排障都能从动态事实回到静态事实。
 - 每次修改都能重新进入运行时验证。
 
