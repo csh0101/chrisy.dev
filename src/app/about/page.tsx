@@ -34,10 +34,7 @@ export default function About() {
                             Infra, language, and dreams.
                         </h1>
                         <p className="mt-7 max-w-md text-base leading-8 text-zinc-600 dark:text-zinc-400">
-                            我是 Amos，也用「csh0101」这个名字记录技术与思考。关注 Program Language、云原生、BigData 与 AI Infra。
-                        </p>
-                        <p className="mt-7 max-w-md text-base leading-8 text-zinc-600 dark:text-zinc-400">
-                            恭华早修居余位，楼台晚证失道果。在复杂系统之间，做一个筑梦缔造者。
+                            恭华早修居余位，楼台晚证失道果。
                         </p>
                         <SiteTimeline/>
                     </div>
