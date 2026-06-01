@@ -114,15 +114,9 @@ export default function Hero() {
                                     <span className="w-5 text-zinc-700 shrink-0 text-right">04</span>
                                     <span className="text-zinc-400 pl-8">stack:</span>
                                     <span className="text-emerald-400">["Program Language", "Cloud Native", "BigData", "AI Infra"]</span>
-                                    <span className="text-zinc-500">,</span>
-                                </div>
-                                <div className="flex gap-4 whitespace-nowrap">
-                                    <span className="w-5 text-zinc-700 shrink-0 text-right">05</span>
-                                    <span className="text-zinc-400 pl-8">vision:</span>
-                                    <span className="text-emerald-400">"筑梦缔造者"</span>
                                 </div>
                                 <div className="flex gap-4">
-                                    <span className="w-5 text-zinc-700 shrink-0 text-right">06</span>
+                                    <span className="w-5 text-zinc-700 shrink-0 text-right">05</span>
                                     <span className="text-zinc-500">{'}'}</span>
                                 </div>
                             </div>

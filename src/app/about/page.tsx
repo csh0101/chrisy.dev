@@ -177,11 +177,6 @@ const timeline = [
         title: "AI Infra",
         desc: "面向模型、数据、算力和应用交付，探索 AI 时代的基础设施形态。",
     },
-    {
-        year: "2026",
-        title: "筑梦缔造者",
-        desc: "持续构建可被复用、可被信任、也能承载想象力的技术系统。",
-    },
 ];
 
 const SiteTimeline = () => {
