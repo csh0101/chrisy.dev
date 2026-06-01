@@ -1,0 +1,336 @@
+export const metadata = {
+    title: 'Camera Sensor 不是存图机器，而是实时流水线',
+    date: '2026-06-02',
+    address: 'csh0101.cc',
+    summary: '从 pixel array、ADC 到 MIPI CSI-2，建立一个更直观的 camera sensor 数据流模型：sensor 不是先存完整图像，而是边采集、边转换、边输出。',
+    tags: [ 'Camera', 'Sensor', 'MIPI', 'Driver' ]
+}
+
+# Camera Sensor 不是存图机器，而是实时流水线
+
+我最近和朋友聊了一个很有意思的问题：
+
+一个 camera sensor 的 register，能不能存一个向量来表示 RGB 通道？甚至进一步说，能不能像 `stride + array` 那样，表示多个 RGB 像素组成的矩阵？
+
+这个问题问得挺好。它看起来是在问 register，其实是在问：**camera sensor 里面的数据到底是怎么流动的？**
+
+很多人第一次想 camera sensor，会不自觉地把它想成一个小相机：
+
+```text
+拍一张图
+  ↓
+存在 sensor 里面
+  ↓
+再慢慢发给主控
+```
+
+但真实情况通常不是这样。
+
+更准确的直觉是：
+
+```text
+光进来
+  ↓
+像素阵列产生模拟信号
+  ↓
+逐行读出
+  ↓
+ADC 转成数字
+  ↓
+稍微缓存和打包
+  ↓
+通过 MIPI CSI-2 持续吐给 SoC
+```
+
+也就是说，camera sensor 更像一条实时流水线。它不是一个拿着完整相册慢慢递给你的仓库管理员，而是一个站在传送带旁边不断把数据盒子往外推的工人。
+
+## Register 可以存向量，但不适合存图
+
+先回答最开始那个问题。
+
+一个 register 当然可以 packed 一些 RGB 相关的值。比如一个 32-bit register 可以拆成几个字段：
+
+```text
+REG_RGB_GAIN = 0x00_12_34_56
+
+bits [23:16]  R gain
+bits [15:8]   G gain
+bits [7:0]    B gain
+```
+
+这种意义上，它确实可以表示一个“小向量”。很多 sensor 或 ISP 里也会有类似的寄存器，用来控制 white balance、color gain、test pattern 之类的东西。
+
+但如果说把多个 RGB 像素矩阵存在 register 里，那就不对味了。
+
+```text
+RGB RGB RGB RGB
+RGB RGB RGB RGB
+RGB RGB RGB RGB
+```
+
+这种 `stride + array` 的模型，更像是 SoC / ISP / DRAM 里的 frame buffer。也就是主控接收到图像数据之后，在内存里怎么摆放。
+
+sensor 自己通常不会在内部放一整张 RGB 图像矩阵。它可能有 line buffer、FIFO、packet buffer 这种小缓存，但这些更像流水线里的缓冲区，不是完整图片仓库。
+
+## Sensor 内部大概长什么样
+
+一个极简模型可以这样看：
+
+```text
+┌──────────────────────────────┐
+│          Pixel Array          │
+│                              │
+│   R G R G R G R G            │
+│   G B G B G B G B            │
+│   R G R G R G R G            │
+│   G B G B G B G B            │
+└──────────────┬───────────────┘
+               │
+               │ 逐行读出
+               v
+        ┌─────────────┐
+        │ Row Select  │
+        └──────┬──────┘
+               v
+        ┌─────────────┐
+        │ Column Read │
+        └──────┬──────┘
+               v
+        ┌─────────────┐
+        │     ADC     │
+        └──────┬──────┘
+               v
+        ┌─────────────┐
+        │ Line Buffer │
+        └──────┬──────┘
+               v
+        ┌─────────────┐
+        │ RAW Packing │
+        └──────┬──────┘
+               v
+        ┌─────────────┐
+        │ MIPI CSI-2  │
+        └──────┬──────┘
+               v
+          SoC / ISP / DRAM
+```
+
+这张图的关键不是画得多漂亮，而是帮我们把一个误会拆掉：
+
+**sensor 不是整张图准备好了再发，而是按时序一行一行往外吐。**
+
+所以它内部很多 register 控制的是流水线的行为：
+
+```text
+读多大的窗口？
+每行多长？
+一帧多少行？
+曝光多久？
+模拟增益多少？
+输出 RAW10 还是 RAW12？
+MIPI 用几条 lane？
+现在开始 streaming 吗？
+```
+
+这也解释了为什么 camera sensor register 这么多。它们不是拿来存照片的，它们是在调一条实时生产线。
+
+## 为什么需要 ADC
+
+这里最容易被忽略的一点是：pixel array 一开始产生的不是数字。
+
+光照到像素上，真实发生的是物理过程：
+
+```text
+光子
+  ↓
+photodiode
+  ↓
+电荷
+  ↓
+电压
+  ↓
+ADC
+  ↓
+数字值
+```
+
+软件里我们习惯看到：
+
+```text
+pixel = 128
+```
+
+但 sensor 前端看到的更像是：
+
+```text
+这个小格子积累了多少电荷？
+这些电荷转换出来的电压是多少？
+```
+
+ADC 的作用就是把连续的模拟电压，量化成数字。
+
+比如 RAW10：
+
+```text
+黑        -> 0
+中间亮度  -> 512
+接近全白  -> 1023
+```
+
+RAW12 则是：
+
+```text
+黑        -> 0
+中间亮度  -> 2048
+接近全白  -> 4095
+```
+
+所以 `RAW10`、`RAW12` 里的数字，本质上和量化精度强相关。你可以把 ADC 想成 sensor 里那个负责翻译的人：前面是物理世界，后面是数字世界。没有它，MIPI 再快也只能看着一堆模拟电压发呆。
+
+很多 sensor 里还会有 column ADC。也就是每列附近有 ADC，或者一组列共享 ADC。原因也很朴素：一张图太大，如果一个一个慢慢转，帧率就会变成工程师不愿意承认的数字。
+
+## MIPI 是什么
+
+ADC 后面的数据已经是数字了，但还要把它高速送出去。
+
+这时候常见的接口就是 MIPI CSI-2。
+
+可以先粗暴理解成：
+
+**MIPI CSI-2 是 camera sensor 和 SoC 之间的高速图像数据水管。**
+
+路径大概是：
+
+```text
+Pixel Array
+  ↓
+ADC
+  ↓
+RAW10 / RAW12 Packing
+  ↓
+MIPI CSI-2 Transmitter
+  ↓
+MIPI Lanes
+  ↓
+SoC CSI Receiver
+  ↓
+ISP / DRAM
+```
+
+为什么需要这种专门的高速接口？
+
+随便算一下就知道压力不小。
+
+```text
+1920 * 1080 * 10 bit ≈ 20.7 Mbit / frame
+20.7 Mbit * 30 fps ≈ 622 Mbit/s
+```
+
+这还只是 1080p RAW10 30fps。分辨率、帧率、bit depth 再往上走，数据量就会很快膨胀。
+
+所以 MIPI CSI-2 会用 lane 来传数据：
+
+```text
+Clock lane
+Data lane 0
+Data lane 1
+Data lane 2
+Data lane 3
+```
+
+常说的 2-lane、4-lane，可以理解成高速公路车道数。车道越多，同一时间能跑的数据越多。
+
+MIPI 传的也不是“裸数组”。它会分包：
+
+```text
+Packet Header
+Payload: image data
+Packet Footer / CRC
+```
+
+这样接收端才能知道：
+
+```text
+这包是什么类型？RAW10 还是 RAW12？
+属于哪个 virtual channel？
+payload 多长？
+传输有没有出错？
+```
+
+所以 MIPI 不只是几根线，它是一套把图像数据按时序、按格式、按包送出去的协议。
+
+## Bayer RAW 不是 RGB 矩阵
+
+还有一个重要点：很多 camera sensor 原始输出不是 RGB，而是 Bayer RAW。
+
+它长得更像这样：
+
+```text
+R G R G R G
+G B G B G B
+R G R G R G
+G B G B G B
+```
+
+每个位置通常只有一个颜色分量。一个像素点不是天然拥有完整的 R、G、B 三个值。
+
+真正完整的 RGB，通常要经过 ISP 的 demosaic：
+
+```text
+Bayer RAW
+  ↓
+Demosaic
+  ↓
+RGB / YUV
+```
+
+所以如果我们说“一个像素是 RGB 向量”，在 sensor 原始输出这个语境里经常是不准确的。它更像是“这个位置采到了 R，旁边位置采到了 G，再旁边采到了 B”，后面再靠算法补全。
+
+## 一句话模型
+
+把 camera sensor 想清楚，可以先记住这个模型：
+
+```text
+Sensor 前端：物理世界
+  光子、电荷、电压
+
+Sensor 中段：转换与时序
+  row select、column readout、ADC、line buffer
+
+Sensor 后段：数字输出
+  RAW packing、MIPI CSI-2 packet、lane transmission
+
+SoC / ISP：接收与处理
+  CSI receiver、ISP、DRAM buffer、demosaic、format convert
+```
+
+所以寄存器到底在干什么？
+
+它不是一个用来塞整张图的抽屉。
+
+它更像一排控制旋钮：
+
+```text
+曝光旋钮
+增益旋钮
+窗口旋钮
+时序旋钮
+格式旋钮
+MIPI 车道旋钮
+stream on/off 开关
+```
+
+driver 写 register，本质上是在告诉这条流水线：
+
+```text
+按这个尺寸采。
+按这个时序读。
+按这个精度转数字。
+按这个格式打包。
+从这几条 lane 发出去。
+现在，开工。
+```
+
+理解了这个模型，再回头看那些密密麻麻的 sensor register，它们会稍微没那么像天书。
+
+当然，也只是稍微。
