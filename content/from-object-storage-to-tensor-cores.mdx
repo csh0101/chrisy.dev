@@ -1,0 +1,315 @@
+import { Figure } from "@/components/mdx/article";
+
+export const metadata = {
+    title: '从 Object Storage 到 Tensor Cores：训练数据路径地图',
+    date: '2026-06-03',
+    address: 'csh0101.cc',
+    summary: '沿着 Object Storage、JuiceFS、DataLoader、pinned memory、H2D、HBM、L2 和 Tensor Cores，建立一张训练数据路径的基础地图。',
+    tags: [ 'AI Infra', 'Data Pipeline', 'GPU', 'Storage' ]
+}
+
+# 从 Object Storage 到 Tensor Cores：训练数据路径地图
+
+训练慢的时候，我们很容易盯着 GPU 利用率看。
+
+这当然没错。GPU 是最贵的计算资源，SM 利用率、Tensor Core 利用率、HBM 带宽都很重要。但如果只看 GPU，就容易漏掉另一半事实：GPU 吃到的数据，是从很长的一条流水线送过来的。
+
+这条链路大概长这样：
+
+```text
+Object Storage / JuiceFS
+-> NIC / NVMe cache
+-> Host DDR Memory
+-> DataLoader workers
+-> decode / transform / collate
+-> pinned memory
+-> H2D
+-> GPU VRAM / HBM
+-> GPU L2
+-> SM / Tensor Cores
+```
+
+这篇文章不讲某个具体框架的参数调优，也不写排障清单。我们先把这条路径画清楚：数据在哪里，谁在搬它，什么时候它会成为训练的瓶颈。
+
+<Figure
+    src="/articles/from-object-storage-to-tensor-cores/training-data-path.svg"
+    alt="Training data path from object storage to Tensor Cores"
+    width={1280}
+    height={720}
+    caption="一条训练样本从远端存储进入 GPU 计算核心之前，通常会穿过存储、主机、拷贝和 GPU 内部层级。"
+/>
+
+## 先看整体
+
+这条链路可以分成四段：
+
+- 远端存储和缓存：Object Storage、JuiceFS、NIC、本地 NVMe cache。
+- 主机输入流水线：Host DDR、DataLoader workers、decode、transform、collate。
+- 主机到 GPU 的传输边界：pinned memory 和 H2D。
+- GPU 内部消费路径：HBM、L2、SM、Tensor Cores。
+
+训练吞吐不是由某一个点决定的，而是由这几段共同决定的。任何一段跟不上，GPU 都可能出现“不是没活干，而是在等数据”的状态。
+
+所以理解这条路径的第一步，是先把训练看成一个生产流水线：
+
+```text
+存储负责供货；
+CPU worker 负责加工；
+pinned memory 和 H2D 负责装车过桥；
+GPU HBM / L2 / SM 负责最终消费。
+```
+
+## Object Storage 和 JuiceFS
+
+很多训练数据一开始不在本机磁盘上，而是在对象存储里，比如 S3、OSS、COS，或者通过 JuiceFS 这样的文件系统暴露出来。
+
+对象存储适合放海量数据，但它不是本地内存。一次样本读取背后可能有网络请求、元数据查询、range read、重试、预读和缓存策略。
+
+JuiceFS 的价值，是把对象存储包装成更接近 POSIX 文件系统的形态，同时用本地缓存降低重复访问成本。这样训练代码可以像读普通文件一样读数据，但底层路径仍然可能跨网络、跨缓存、跨元数据服务。
+
+这一段最关心的问题是：
+
+- 数据是不是频繁从远端拉。
+- 本地缓存命中率高不高。
+- 小文件数量是不是太多。
+- 元数据访问是不是压过了真正的数据读取。
+- 多 worker 并发读取时，网络和对象存储是否能撑住。
+
+如果这一段慢，后面再多 DataLoader worker 也可能只是排队等 I/O。
+
+## NIC 和 NVMe Cache
+
+当数据从远端进入机器，通常先经过 NIC。如果 JuiceFS 或训练系统配置了本地缓存，数据还可能落到 NVMe cache。
+
+这里有两个很不同的路径：
+
+```text
+缓存命中：NVMe cache -> Host DDR
+缓存未命中：Object Storage -> NIC -> Host DDR，并可能写入 NVMe cache
+```
+
+缓存命中时，瓶颈更像本地磁盘和文件系统。缓存未命中时，瓶颈更像网络、对象存储和远端读延迟。
+
+这也是为什么同一个训练任务，第一轮 epoch 和后面几轮 epoch 的体感可能不同。第一轮像是在一边训练一边把数据搬进本地；后面如果缓存命中率上来了，就更像本地数据集。
+
+但 NVMe cache 也不是免费午餐。它有容量、淘汰策略、写放大、并发读写和目录布局问题。缓存太小、数据访问太随机、worker 数太多，都可能让本地 cache 变成新的竞争点。
+
+## Host DDR Memory
+
+数据进到主机后，会进入 Host DDR Memory。它可能先进入 page cache，也可能进入用户态 buffer，最后被 DataLoader workers 拿来处理。
+
+这里容易忽略一个事实：Host DDR 不只是“中转站”，它也是训练输入流水线的工作区。
+
+在主机内存里，样本会被读取、解码、增强、拼接成 batch。对于图像、视频、语音、多模态数据，这一段可能非常重。尤其是 decode 和 transform，很多时候不是 GPU 慢，而是 CPU worker 没来得及把下一批数据准备好。
+
+一个典型信号是：
+
+```text
+GPU kernel 执行很快；
+但是 step 之间有明显空洞；
+DataLoader queue 经常为空；
+CPU 或磁盘某一侧很忙。
+```
+
+这时问题不在 Tensor Cores，而在 Tensor Cores 前面的厨房还没把菜端出来。
+
+## DataLoader Workers
+
+DataLoader workers 的职责，是提前把下一批样本准备好。
+
+它们通常会做这些事：
+
+- 从文件系统读样本。
+- 做 decode，比如 JPEG、PNG、视频帧、token 文件。
+- 做 transform，比如 resize、crop、normalize、augmentation。
+- 做 collate，把多个样本拼成一个 batch。
+- 把 batch 送到后续队列。
+
+worker 数不是越多越好。worker 太少，CPU 加工跟不上 GPU。worker 太多，又可能把文件系统、page cache、NVMe、对象存储和 CPU cache 都打乱。
+
+更准确的看法是：DataLoader workers 是一个并发加工厂。你要让它刚好能持续填满 GPU 前面的队列，而不是把整台机器变成争抢锁、争抢磁盘、争抢内存带宽的现场。
+
+## Decode / Transform / Collate
+
+这一段经常是输入流水线最“隐形”的部分。
+
+模型训练看到的是 tensor，但数据集里存的可能是压缩图片、文本、视频、音频或结构化样本。把原始样本变成 tensor，需要 CPU 做不少工作。
+
+可以把它分成三类：
+
+- decode：把压缩格式还原成原始数组。
+- transform：做 resize、crop、normalize、augmentation。
+- collate：把多个样本拼成一个 batch，并处理 padding、mask、label 等结构。
+
+如果这一段慢，最直接的表现是 GPU 等 batch。即使存储和网络很快，CPU 处理不过来，训练也会被喂数据速度限制。
+
+所以对输入流水线来说，`batch size` 不只是 GPU 显存问题，也是 CPU 加工粒度问题。太小会增加调度和 Python overhead，太大可能让单个 batch 的 decode、collate 和 H2D 都变重。
+
+## Pinned Memory
+
+当 batch 准备好后，下一步通常是从主机内存拷到 GPU 显存，也就是 H2D，Host to Device。
+
+这里会遇到 pinned memory。
+
+普通 pageable memory 可能被操作系统换出或移动。GPU DMA 引擎要稳定地从主机内存读取数据，就更喜欢 pinned memory，也就是锁页内存。它的地址稳定，更适合异步拷贝。
+
+在 PyTorch 里，`pin_memory=True` 的核心直觉就是：
+
+```text
+先把 batch 放到适合 DMA 的主机内存里；
+再让 H2D copy 更容易异步、高效地发生。
+```
+
+但 pinned memory 也不是越多越好。它会占用不能随意换出的物理内存。锁页太多，主机内存压力会上来，反而可能影响系统整体表现。
+
+所以 pinned memory 是 H2D 前的一座桥，不是无限大的停车场。
+
+## H2D：主机到 GPU 的边界
+
+H2D 是 Host to Device，也就是从 CPU 侧内存到 GPU 显存的拷贝。
+
+这一步通常走 PCIe，某些平台上也可能涉及 NVLink 或更复杂的 GPU direct 路径。它的关键不是“有没有拷贝”，而是拷贝能不能和计算重叠。
+
+理想情况下，训练像这样流水化：
+
+```text
+GPU 正在计算 batch N；
+CPU workers 正在准备 batch N+1；
+H2D 正在搬 batch N+1 或 N+2。
+```
+
+如果重叠做得好，H2D 的成本会被隐藏一部分。如果重叠做不好，GPU 每一步都要等数据从主机搬过来。
+
+这也是为什么异步 copy、prefetch、stream、pinned memory 这些东西经常一起出现。它们都在试图解决同一个问题：不要让 GPU 在 batch 边界上干等。
+
+## GPU VRAM / HBM
+
+数据进入 GPU 后，首先落在 GPU VRAM，也就是 HBM。
+
+HBM 是 GPU 的主内存，带宽很高，但它离计算核心仍然有距离。训练时，模型参数、激活、梯度、optimizer state、输入 batch 都会占用 HBM。
+
+如果输入 batch 只是进了 HBM，却没有被 kernel 高效访问，GPU 仍然可能跑不满。
+
+这里要分清两件事：
+
+```text
+H2D 负责把数据送进 GPU；
+kernel 负责把数据从 HBM 读出来并参与计算。
+```
+
+前者是传输问题，后者是 kernel 和内存访问模式问题。
+
+## GPU L2
+
+GPU L2 是片上缓存。它比 HBM 小得多，但离 SM 更近。
+
+训练里很多数据访问并不是只读一次就结束。参数、激活块、中间结果、tile 化后的矩阵数据，都可能在 L2 或更低层级中被复用。
+
+如果访问模式好，L2 能减少对 HBM 的压力。如果访问模式差，即使 HBM 带宽很高，也可能被不规则访问、低复用率或糟糕的数据布局拖住。
+
+所以 GPU 内部也有自己的数据路径：
+
+```text
+HBM -> L2 -> SM local cache / shared memory / register -> Tensor Cores
+```
+
+这已经进入 kernel 层面的优化范围。对于一篇基础地图来说，先记住一点就够了：数据到了 HBM，不代表计算核心已经高效吃到了它。
+
+## SM 和 Tensor Cores
+
+SM 是 GPU 上执行 CUDA kernel 的基本计算单元。Tensor Cores 是其中专门加速矩阵运算的硬件单元。
+
+深度学习训练最终希望看到的是：Tensor Cores 持续有活干，SM occupancy、内存带宽、kernel launch、数据布局都不要成为明显短板。
+
+但 Tensor Cores 能不能忙起来，不只取决于模型本身，也取决于前面那条长流水线：
+
+```text
+样本是否及时读到？
+CPU 是否及时解码？
+batch 是否及时拼好？
+H2D 是否及时完成？
+kernel 是否能高效读 HBM 和 L2？
+```
+
+前面任何一段断流，最后看到的都是 GPU 不够忙。
+
+## 几种常见瓶颈
+
+可以把瓶颈粗略分成四类：
+
+<Table
+    data={[
+        { type: 'I/O bound', where: 'Object Storage、JuiceFS、NIC、NVMe cache', signal: '读取慢、缓存未命中、worker 等数据' },
+        { type: 'CPU bound', where: 'decode、transform、collate', signal: 'CPU 忙，GPU step 之间有空洞' },
+        { type: 'Copy bound', where: 'pinned memory、H2D', signal: 'batch 准备好了，但 GPU 等拷贝' },
+        { type: 'Compute / memory bound', where: 'HBM、L2、SM、Tensor Cores', signal: '数据已在 GPU，但 kernel 本身受限' },
+    ]}
+    columns={[
+        { key: 'type', title: '类型', width: '180px' },
+        { key: 'where', title: '常见位置' },
+        { key: 'signal', title: '直觉信号' },
+    ]}
+/>
+
+这张表不是为了替代 profiling，而是为了帮你先定位层级。
+
+很多时候，我们需要先问：
+
+```text
+GPU 是在等远端存储？
+还是等 CPU worker？
+还是等 H2D？
+还是 GPU kernel 自己不够高效？
+```
+
+问题层级不同，解决方式完全不同。
+
+## 一个 batch 的时间线
+
+更接近真实训练的视角，不是单个 batch 从头走到尾，而是多个 batch 交叠：
+
+```text
+batch N:     H2D -> GPU compute
+batch N+1:   decode / transform / collate -> pinned memory
+batch N+2:   read from JuiceFS / cache -> host memory
+```
+
+吞吐好的训练，不是每一步都绝对快，而是这些步骤能重叠起来。
+
+如果流水线没有重叠，就会变成：
+
+```text
+读数据 -> 解码 -> 拼 batch -> H2D -> GPU compute -> 下一轮再来
+```
+
+这样 GPU 和 CPU 总有一边在等另一边。真正好的输入管线，是让存储、CPU、DMA、GPU 尽量同时工作。
+
+## 怎么建立观察顺序
+
+基础观察可以按这条顺序来：
+
+1. 先看 GPU 利用率和 step time 有没有周期性空洞。
+2. 再看 DataLoader queue 是否经常为空。
+3. 看 CPU 是否被 decode、transform 或 collate 打满。
+4. 看对象存储、JuiceFS、本地 NVMe cache 的读取延迟和吞吐。
+5. 看 H2D copy 是否和 GPU compute 重叠。
+6. 最后再深入 GPU kernel、HBM、L2、SM 和 Tensor Core 利用率。
+
+这个顺序的好处是：先判断是不是“没喂饱”，再判断是不是“吃得慢”。
+
+## 总结
+
+训练数据路径不是一句“从磁盘读到 GPU”能概括的。
+
+如果数据来自 Object Storage 或 JuiceFS，它先要经过网络和缓存；进到主机后，还要经过 DataLoader workers、decode、transform、collate；送到 GPU 前，需要 pinned memory 和 H2D；进入 GPU 后，还要穿过 HBM、L2，最终才被 SM 和 Tensor Cores 消费。
+
+所以这条链路可以记成一句话：
+
+```text
+存储决定数据能不能及时到主机；
+CPU 输入流水线决定 batch 能不能及时成形；
+H2D 决定 batch 能不能及时过桥；
+GPU 内部层级决定数据能不能被计算核心高效消费。
+```
+
+把这张地图放在脑子里，再看训练吞吐、GPU 利用率和 DataLoader 配置，就不会只盯着某一个点发呆。训练性能更像一条河，堵在哪里，水位就会在哪里变形。
