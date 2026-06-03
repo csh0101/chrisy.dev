@@ -89,14 +89,20 @@ mlx5_2
 
 理解 RDMA 不需要一开始就读完整 verbs API，但有几个名词绕不开。
 
-| 概念 | 可以先这样理解 |
-|---|---|
-| MR | Memory Region，被注册给 HCA 的一段内存 |
-| lkey/rkey | HCA 访问本地或远端 MR 的授权 key |
-| QP | Queue Pair，通信端点，里面有发送队列和接收队列 |
-| CQ | Completion Queue，完成队列，用来告诉应用某个操作完成或失败 |
-| PD | Protection Domain，资源隔离边界 |
-| WR | Work Request，应用提交给 HCA 的一次工作请求 |
+<Table
+    data={[
+        { concept: 'MR', meaning: 'Memory Region，被注册给 HCA 的一段内存' },
+        { concept: 'lkey/rkey', meaning: 'HCA 访问本地或远端 MR 的授权 key' },
+        { concept: 'QP', meaning: 'Queue Pair，通信端点，里面有发送队列和接收队列' },
+        { concept: 'CQ', meaning: 'Completion Queue，完成队列，用来告诉应用某个操作完成或失败' },
+        { concept: 'PD', meaning: 'Protection Domain，资源隔离边界' },
+        { concept: 'WR', meaning: 'Work Request，应用提交给 HCA 的一次工作请求' },
+    ]}
+    columns={[
+        { key: 'concept', title: '概念', width: '160px' },
+        { key: 'meaning', title: '可以先这样理解' },
+    ]}
+/>
 
 可以把它想成一个“授权搬运系统”：
 
@@ -115,11 +121,18 @@ mlx5_2
 
 RDMA 不是单一网络形态，常见有三条路线：
 
-| 路线 | 运行在哪 | 常见特点 |
-|---|---|---|
-| InfiniBand | 专用高性能网络 | HPC 和 AI 集群里常见，低延迟、高吞吐 |
-| RoCE | 以太网 | 把 RDMA 跑在 Ethernet 上，数据中心更容易复用网络设施 |
-| iWARP | TCP/IP | 也是 RDMA over IP 的路线，但在 AI/HPC 场景里没有 RoCE 和 IB 常见 |
+<Table
+    data={[
+        { route: 'InfiniBand', layer: '专用高性能网络', feature: 'HPC 和 AI 集群里常见，低延迟、高吞吐' },
+        { route: 'RoCE', layer: '以太网', feature: '把 RDMA 跑在 Ethernet 上，数据中心更容易复用网络设施' },
+        { route: 'iWARP', layer: 'TCP/IP', feature: '也是 RDMA over IP 的路线，但在 AI/HPC 场景里没有 RoCE 和 IB 常见' },
+    ]}
+    columns={[
+        { key: 'route', title: '路线', width: '150px' },
+        { key: 'layer', title: '运行在哪', width: '170px' },
+        { key: 'feature', title: '常见特点' },
+    ]}
+/>
 
 其中 RoCE 又常分为 RoCE v1 和 RoCE v2：
 
@@ -178,15 +191,22 @@ collective 的特点是：不是一个发送方和一个接收方，而是一组
 
 常见 collective 可以这样理解：
 
-| 操作 | 数据怎么变化 | 训练里常见用途 |
-|---|---|---|
-| AllReduce | 每个 rank 输入一份数据，所有 rank 都得到聚合后的完整结果 | 同步梯度 |
-| Broadcast | root rank 的数据复制给所有 rank | 分发参数或状态 |
-| Reduce | 多个 rank 的数据聚合到一个 root rank | 汇总指标或中间结果 |
-| AllGather | 每个 rank 提供一块数据，所有 rank 都拿到拼接后的完整数据 | 收集分片结果 |
-| ReduceScatter | 先聚合，再把聚合结果按 rank 切分 | 大模型训练里常见的梯度/参数分片通信 |
-| AlltoAll | 每个 rank 都给每个其他 rank 发送不同分片 | MoE、重分片、token dispatch |
-| Send/Recv | 点对点发送和接收 | 自定义通信或特殊拓扑 |
+<Table
+    data={[
+        { op: 'AllReduce', change: '每个 rank 输入一份数据，所有 rank 都得到聚合后的完整结果', usage: '同步梯度' },
+        { op: 'Broadcast', change: 'root rank 的数据复制给所有 rank', usage: '分发参数或状态' },
+        { op: 'Reduce', change: '多个 rank 的数据聚合到一个 root rank', usage: '汇总指标或中间结果' },
+        { op: 'AllGather', change: '每个 rank 提供一块数据，所有 rank 都拿到拼接后的完整数据', usage: '收集分片结果' },
+        { op: 'ReduceScatter', change: '先聚合，再把聚合结果按 rank 切分', usage: '大模型训练里常见的梯度/参数分片通信' },
+        { op: 'AlltoAll', change: '每个 rank 都给每个其他 rank 发送不同分片', usage: 'MoE、重分片、token dispatch' },
+        { op: 'Send/Recv', change: '点对点发送和接收', usage: '自定义通信或特殊拓扑' },
+    ]}
+    columns={[
+        { key: 'op', title: '操作', width: '150px' },
+        { key: 'change', title: '数据怎么变化' },
+        { key: 'usage', title: '训练里常见用途' },
+    ]}
+/>
 
 以 AllReduce 为例。假设有 4 个 rank，每个 rank 上都有一份梯度：
 
@@ -216,13 +236,20 @@ rank3: g0 + g1 + g2 + g3
 
 NCCL 会根据拓扑、rank 数、消息大小和可用网络选择更合适的算法。常见算法包括：
 
-| 算法 | 可以先这样理解 | 适合直觉 |
-|---|---|---|
-| Ring | rank 组成环，数据被切成块，沿环流动和归约 | 大消息、高吞吐 |
-| Tree | rank 组成树，先向上归约，再向下广播 | 小消息、低延迟 |
-| CollnetDirect / CollnetChain | 利用网络层次或专门路径做跨节点 collective | 多节点场景 |
-| NVLS | 利用 NVLink SHARP 等能力做 offload | 支持 NVLS 的新平台 |
-| NVLSTree | 把 NVLS 和 tree 思路结合 | 新平台上的特定拓扑 |
+<Table
+    data={[
+        { algo: 'Ring', meaning: 'rank 组成环，数据被切成块，沿环流动和归约', fit: '大消息、高吞吐' },
+        { algo: 'Tree', meaning: 'rank 组成树，先向上归约，再向下广播', fit: '小消息、低延迟' },
+        { algo: 'CollnetDirect / CollnetChain', meaning: '利用网络层次或专门路径做跨节点 collective', fit: '多节点场景' },
+        { algo: 'NVLS', meaning: '利用 NVLink SHARP 等能力做 offload', fit: '支持 NVLS 的新平台' },
+        { algo: 'NVLSTree', meaning: '把 NVLS 和 tree 思路结合', fit: '新平台上的特定拓扑' },
+    ]}
+    columns={[
+        { key: 'algo', title: '算法', width: '220px' },
+        { key: 'meaning', title: '可以先这样理解' },
+        { key: 'fit', title: '适合直觉' },
+    ]}
+/>
 
 Ring 的直觉像这样：
 
@@ -260,11 +287,18 @@ NCCL 文档里的 protocol，和 InfiniBand/RoCE 这种网络协议不是同一�
 
 常见协议包括：
 
-| 协议 | 可以先这样理解 | 适合直觉 |
-|---|---|---|
-| Simple | 更偏大块搬运，吞吐优先 | 大消息 |
-| LL | Low Latency，小粒度、低延迟 | 小消息 |
-| LL128 | 一种面向特定平台优化的低延迟协议 | 平台支持时的小/中消息 |
+<Table
+    data={[
+        { protocol: 'Simple', meaning: '更偏大块搬运，吞吐优先', fit: '大消息' },
+        { protocol: 'LL', meaning: 'Low Latency，小粒度、低延迟', fit: '小消息' },
+        { protocol: 'LL128', meaning: '一种面向特定平台优化的低延迟协议', fit: '平台支持时的小/中消息' },
+    ]}
+    columns={[
+        { key: 'protocol', title: '协议', width: '140px' },
+        { key: 'meaning', title: '可以先这样理解' },
+        { key: 'fit', title: '适合直觉' },
+    ]}
+/>
 
 所以 NCCL 的一次 collective，最终不是只有“用 RDMA”这么简单，而是几层选择叠在一起：
 
@@ -367,13 +401,19 @@ export NCCL_NET_GDR_READ=0
 
 按当前 NCCL 文档，`NCCL_NET_GDR_LEVEL` 更推荐用字符串值表达拓扑距离：
 
-| 值 | 含义 |
-|---|---|
-| LOC | 不使用 GPUDirect RDMA |
-| PIX | GPU 和 NIC 在同一个 PCI switch 下时使用 |
-| PXB | GPU 和 NIC 经过 PCI switches 时使用 |
-| PHB | GPU 和 NIC 在同一个 NUMA 节点内时使用 |
-| SYS | 即使跨 NUMA/SMP interconnect 也允许使用 |
+<Table
+    data={[
+        { value: 'LOC', meaning: '不使用 GPUDirect RDMA' },
+        { value: 'PIX', meaning: 'GPU 和 NIC 在同一个 PCI switch 下时使用' },
+        { value: 'PXB', meaning: 'GPU 和 NIC 经过 PCI switches 时使用' },
+        { value: 'PHB', meaning: 'GPU 和 NIC 在同一个 NUMA 节点内时使用' },
+        { value: 'SYS', meaning: '即使跨 NUMA/SMP interconnect 也允许使用' },
+    ]}
+    columns={[
+        { key: 'value', title: '值', width: '120px' },
+        { key: 'meaning', title: '含义' },
+    ]}
+/>
 
 这不是说每个环境都应该设置成 `SYS`。更合适的理解是：GDR level 越高，NCCL 允许使用 GPUDirect RDMA 的 GPU-HCA 路径范围就越大。
 
