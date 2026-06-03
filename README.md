@@ -96,7 +96,15 @@ Available custom components: `<Callout>`, `<Catalog>`, `<Code>`, `<Highlight>`, 
 
 ## Deployment
 
-Hosted on [Cloudflare Pages](https://pages.cloudflare.com), auto-deployed via Git.
+Hosted on [Cloudflare Pages](https://pages.cloudflare.com).
+
+Deployments are handled by GitHub Actions. Every push to `main` runs `npm run build`
+and publishes `dist/` to the Cloudflare Pages project `csh0101-cc`.
+
+Required GitHub Actions secrets:
+
+- `CLOUDFLARE_API_TOKEN`
+- `CLOUDFLARE_ACCOUNT_ID`
 
 ## License
 
