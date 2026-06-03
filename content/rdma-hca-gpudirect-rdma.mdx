@@ -1,0 +1,467 @@
+export const metadata = {
+    title: 'RDMA、HCA 和 GPUDirect RDMA：从数据怎么走开始理解',
+    date: '2026-06-03',
+    address: 'csh0101.cc',
+    summary: '从数据路径出发，理解 RDMA、HCA、NCCL 集合通信、算法协议和 GPUDirect RDMA 之间的关系。',
+    tags: [ 'RDMA', 'HCA', 'NCCL', 'GPU' ]
+}
+
+# RDMA、HCA 和 GPUDirect RDMA：从数据怎么走开始理解
+
+如果第一次接触 RDMA，很容易被一堆缩写绕晕：HCA、QP、CQ、MR、RoCE、GDR、NCCL。它们看起来都很底层，但真正要理解的核心其实只有一个问题：
+
+```text
+数据从一台机器到另一台机器，到底是怎么走的？
+```
+
+这篇文章不从复杂案例开始，也不先讲性能数字。我们先建立一张基础地图：RDMA 是什么，HCA 在里面做什么，为什么 GPU 训练又会关心 GPUDirect RDMA。
+
+## 传统网络路径
+
+先看普通网络通信。
+
+应用程序要把一段数据发到另一台机器，通常会经过大致这样的路径：
+
+```text
+应用内存
+-> 操作系统内核
+-> TCP/IP 协议栈
+-> 网卡
+-> 网络
+-> 对端网卡
+-> 对端内核
+-> 对端应用内存
+```
+
+这个过程很通用，也很稳定，但它有几个成本：
+
+- CPU 要参与协议处理。
+- 数据可能在用户态、内核态、网卡缓冲之间复制。
+- 收发路径会有系统调用、上下文切换和协议栈开销。
+
+对普通业务来说，这些成本大多可以接受。但在高性能计算、AI 训练、存储系统里，机器之间要频繁搬运大块数据，这些开销就会变得明显。
+
+RDMA 要解决的就是这个问题。
+
+## RDMA 是什么
+
+RDMA 是 Remote Direct Memory Access，直译是“远程直接内存访问”。
+
+它的关键不是“换了一种更快的网线”，而是换了一条数据路径：
+
+```text
+应用注册内存
+-> HCA 获得访问授权
+-> HCA 直接搬运本地或远端内存中的数据
+```
+
+这里的“直接”有两个意思：
+
+- 对端 CPU 不需要像传统网络那样参与每一次数据收发。
+- 数据路径可以减少内核协议栈和中间拷贝。
+
+所以 RDMA 的价值通常体现在三个方面：
+
+- 更低延迟。
+- 更少 CPU 占用。
+- 更高吞吐，尤其是大规模并发通信时。
+
+不过 RDMA 也不是魔法。为了让网卡安全地访问内存，应用必须先把内存注册给 RDMA 设备，并且通过 key、队列、完成事件等机制控制访问边界。
+
+## HCA 是什么
+
+HCA 是 Host Channel Adapter，可以简单理解为支持 RDMA 的网络适配器。在 InfiniBand 场景里经常叫 HCA，在以太网 RDMA 场景里也会看到 RNIC 这个说法。
+
+普通网卡主要负责收发网络包；HCA 除了收发包，还能理解 RDMA verbs，知道怎样根据应用提交的任务去读写内存。
+
+在 Linux 机器上，常见的 NVIDIA/Mellanox RDMA 设备名会长这样：
+
+```text
+mlx5_0
+mlx5_1
+mlx5_2
+...
+```
+
+如果一台服务器有多块高速网卡，就可能出现多个 `mlx5_*` 设备。应用到底用哪一块 HCA，就会变成一个真实的工程问题。
+
+## 几个必须认识的 RDMA 概念
+
+理解 RDMA 不需要一开始就读完整 verbs API，但有几个名词绕不开。
+
+| 概念 | 可以先这样理解 |
+|---|---|
+| MR | Memory Region，被注册给 HCA 的一段内存 |
+| lkey/rkey | HCA 访问本地或远端 MR 的授权 key |
+| QP | Queue Pair，通信端点，里面有发送队列和接收队列 |
+| CQ | Completion Queue，完成队列，用来告诉应用某个操作完成或失败 |
+| PD | Protection Domain，资源隔离边界 |
+| WR | Work Request，应用提交给 HCA 的一次工作请求 |
+
+可以把它想成一个“授权搬运系统”：
+
+```text
+应用先登记一块内存 MR
+-> 拿到访问 key
+-> 把发送/接收/读写请求放进 QP
+-> HCA 执行搬运
+-> 结果进入 CQ
+-> 应用轮询或等待完成事件
+```
+
+这也是为什么 RDMA 问题经常不像普通网络问题。它不只涉及 IP 通不通，还涉及内存注册、设备队列、访问权限、PCIe 拓扑和完成事件。
+
+## InfiniBand、RoCE 和 iWARP
+
+RDMA 不是单一网络形态，常见有三条路线：
+
+| 路线 | 运行在哪 | 常见特点 |
+|---|---|---|
+| InfiniBand | 专用高性能网络 | HPC 和 AI 集群里常见，低延迟、高吞吐 |
+| RoCE | 以太网 | 把 RDMA 跑在 Ethernet 上，数据中心更容易复用网络设施 |
+| iWARP | TCP/IP | 也是 RDMA over IP 的路线，但在 AI/HPC 场景里没有 RoCE 和 IB 常见 |
+
+其中 RoCE 又常分为 RoCE v1 和 RoCE v2：
+
+- RoCE v1 基于二层以太网。
+- RoCE v2 基于 UDP/IP，更适合三层网络。
+
+如果你是在 AI 训练集群里看 RDMA，大概率会遇到 InfiniBand 或 RoCE v2。
+
+## HCA Mix 是什么
+
+“HCA mix”不是一个严格标准术语，但在工程里很有用。
+
+我会把它理解成：
+
+> 一台或一组机器里存在多块 HCA、多端口、多协议、多路径或不同 GPU-HCA 拓扑时，应用需要在这些不完全等价的数据路径中做选择。
+
+比如一台 8 卡 GPU 服务器里可能同时有多块 HCA：
+
+```text
+mlx5_2, mlx5_3, mlx5_4, mlx5_6, mlx5_7, mlx5_10, mlx5_11
+```
+
+这些 HCA 看起来都是 400G，但它们未必对每张 GPU 都“距离一样近”。有的可能和某些 GPU 在同一个 PCIe switch 下，有的可能要跨 NUMA，有的可能走不同交换路径。
+
+所以在多 GPU、多 HCA 机器上，问题不只是：
+
+```text
+网卡是不是 400G？
+```
+
+还包括：
+
+```text
+哪张 GPU 通过哪块 HCA 发数据？
+这条路径是否跨 NUMA？
+是否经过 PCIe switch？
+应用是否真的选中了期望的 HCA？
+多 rank 并发时会不会把某些路径打满？
+```
+
+这就是 HCA mix 真正值得关注的地方。
+
+## GPU 训练为什么关心 RDMA
+
+多机 GPU 训练里，GPU 之间要频繁同步参数、梯度或中间结果。单机内，多张 GPU 可以通过 NVLink、PCIe、共享内存等路径通信。跨机器时，就必须走网络。
+
+这时 RDMA 的价值就出现了：它能让多机 GPU 训练减少 CPU 和内核协议栈开销，把跨节点通信做得更低延迟、更高吞吐。
+
+但训练框架通常不会直接让你写 RDMA verbs。它们更常通过 NCCL 这样的通信库来完成 GPU 之间的集合通信。
+
+## NCCL 和集合通信
+
+NCCL 是 NVIDIA Collective Communications Library。它最重要的工作不是“发一个包”，而是在多张 GPU 之间高效完成 collective communication。
+
+collective 的特点是：不是一个发送方和一个接收方，而是一组 rank 一起参与同一个通信动作。这里的 rank 可以先理解成一次分布式训练里的一个 GPU 参与者。
+
+常见 collective 可以这样理解：
+
+| 操作 | 数据怎么变化 | 训练里常见用途 |
+|---|---|---|
+| AllReduce | 每个 rank 输入一份数据，所有 rank 都得到聚合后的完整结果 | 同步梯度 |
+| Broadcast | root rank 的数据复制给所有 rank | 分发参数或状态 |
+| Reduce | 多个 rank 的数据聚合到一个 root rank | 汇总指标或中间结果 |
+| AllGather | 每个 rank 提供一块数据，所有 rank 都拿到拼接后的完整数据 | 收集分片结果 |
+| ReduceScatter | 先聚合，再把聚合结果按 rank 切分 | 大模型训练里常见的梯度/参数分片通信 |
+| AlltoAll | 每个 rank 都给每个其他 rank 发送不同分片 | MoE、重分片、token dispatch |
+| Send/Recv | 点对点发送和接收 | 自定义通信或特殊拓扑 |
+
+以 AllReduce 为例。假设有 4 个 rank，每个 rank 上都有一份梯度：
+
+```text
+rank0: g0
+rank1: g1
+rank2: g2
+rank3: g3
+```
+
+AllReduce 之后，每个 rank 都得到同一个结果：
+
+```text
+rank0: g0 + g1 + g2 + g3
+rank1: g0 + g1 + g2 + g3
+rank2: g0 + g1 + g2 + g3
+rank3: g0 + g1 + g2 + g3
+```
+
+这就是为什么深度学习训练特别依赖 AllReduce：每张 GPU 算出自己的梯度后，需要把大家的梯度聚合起来，才能让模型参数保持一致。
+
+## NCCL 算法：Ring、Tree、Collnet、NVLS
+
+同一个 collective，可以用不同算法实现。
+
+比如 AllReduce，最朴素的想法是：所有 rank 都把数据发给一个中心节点，中心节点求和后再发回所有 rank。但这会让中心节点成为瓶颈。
+
+NCCL 会根据拓扑、rank 数、消息大小和可用网络选择更合适的算法。常见算法包括：
+
+| 算法 | 可以先这样理解 | 适合直觉 |
+|---|---|---|
+| Ring | rank 组成环，数据被切成块，沿环流动和归约 | 大消息、高吞吐 |
+| Tree | rank 组成树，先向上归约，再向下广播 | 小消息、低延迟 |
+| CollnetDirect / CollnetChain | 利用网络层次或专门路径做跨节点 collective | 多节点场景 |
+| NVLS | 利用 NVLink SHARP 等能力做 offload | 支持 NVLS 的新平台 |
+| NVLSTree | 把 NVLS 和 tree 思路结合 | 新平台上的特定拓扑 |
+
+Ring 的直觉像这样：
+
+```text
+rank0 -> rank1 -> rank2 -> rank3 -> rank0
+```
+
+数据被切成多个 chunk，每一轮大家都发送一块、接收一块，同时做归约。Ring 的好处是链路利用率高，缺点是延迟和 rank 数、轮次有关。
+
+Tree 的直觉像这样：
+
+```text
+      rank0
+     /     \
+ rank1     rank2
+             \
+             rank3
+```
+
+数据先沿树向上聚合，再沿树向下分发。Tree 往往更适合小消息或对延迟敏感的场景。
+
+这也是为什么只说“跑了 AllReduce”还不够。你还要知道它背后用的是哪类算法、数据被切成多大的块、跨节点时走哪块 HCA、单机内走 NVLink 还是 PCIe。
+
+NCCL 里可以用 `NCCL_ALGO` 限制允许的算法，例如：
+
+```bash
+export NCCL_ALGO=Ring,Tree
+```
+
+当前 NCCL 文档里，`NCCL_ALGO` 支持按 collective 类型设置更细的策略，例如让 allreduce 用 tree，让 broadcast 用 ring。基础文章里不需要展开到这个程度，但要记住：NCCL 的算法选择不是固定的，它是拓扑感知和场景相关的。
+
+## NCCL 协议：Simple、LL、LL128
+
+NCCL 文档里的 protocol，和 InfiniBand/RoCE 这种网络协议不是同一个层面的东西。这里的 protocol 更像是 NCCL 在 GPU kernel、buffer、拷贝和同步粒度上的传输方式。
+
+常见协议包括：
+
+| 协议 | 可以先这样理解 | 适合直觉 |
+|---|---|---|
+| Simple | 更偏大块搬运，吞吐优先 | 大消息 |
+| LL | Low Latency，小粒度、低延迟 | 小消息 |
+| LL128 | 一种面向特定平台优化的低延迟协议 | 平台支持时的小/中消息 |
+
+所以 NCCL 的一次 collective，最终不是只有“用 RDMA”这么简单，而是几层选择叠在一起：
+
+```text
+collective 类型：AllReduce / Broadcast / ReduceScatter / ...
+-> 算法：Ring / Tree / CollnetDirect / CollnetChain / NVLS / ...
+-> 协议：Simple / LL / LL128
+-> 单机路径：NVLink / PCIe / SHM
+-> 跨机路径：Socket / InfiniBand / RoCE
+-> HCA 选择：mlx5_*
+-> 是否使用 GPUDirect RDMA
+```
+
+`NCCL_PROTO` 可以限制 NCCL 允许使用哪些协议，例如：
+
+```bash
+export NCCL_PROTO=Simple,LL,LL128
+```
+
+日常使用里通常不需要手工固定算法和协议。更常见的做法是让 NCCL 自动选择，再通过日志观察它选了什么：
+
+```bash
+export NCCL_DEBUG=INFO
+export NCCL_DEBUG_SUBSYS=COLL,GRAPH,TUNING,NET
+```
+
+这里有个很重要的分层认识：
+
+```text
+RDMA/HCA 决定跨节点数据能怎么走；
+NCCL 决定 collective 被拆成什么算法和协议；
+GPUDirect RDMA 决定 HCA 能不能直接碰 GPU 显存。
+```
+
+## NCCL 怎么选择网络路径
+
+NCCL 会根据机器拓扑、网络设备和环境变量选择通信路径。常见的配置包括：
+
+```bash
+export NCCL_SOCKET_IFNAME=ens9f0np0
+export NCCL_IB_HCA=mlx5_6,mlx5_7,mlx5_10,mlx5_11
+```
+
+可以先这样理解：
+
+- `NCCL_SOCKET_IFNAME` 影响 NCCL 使用哪些 IP 网络接口。
+- `NCCL_IB_HCA` 影响 NCCL 使用哪些 RDMA HCA。
+
+在复杂机器上，这两个变量经常需要分开看。
+
+## GPUDirect RDMA 是什么
+
+普通 RDMA 默认处理的是主机内存，也就是 CPU 侧内存。但 GPU 训练里的数据主要在 GPU 显存里。
+
+如果没有 GPUDirect RDMA，跨节点发送 GPU 数据时，路径可能像这样：
+
+```text
+GPU 显存
+-> CPU 内存
+-> RDMA HCA
+-> 网络
+-> 对端 RDMA HCA
+-> 对端 CPU 内存
+-> 对端 GPU 显存
+```
+
+中间的 CPU 内存就像一个中转站。
+
+GPUDirect RDMA 的目标，是让 HCA 可以直接访问 GPU 显存：
+
+```text
+GPU 显存
+<-> RDMA HCA
+<-> 网络
+<-> 对端 RDMA HCA
+<-> 对端 GPU 显存
+```
+
+这条路径少了 CPU 内存 bounce，理论上可以降低延迟、减少 CPU 压力，并提高多机训练通信效率。
+
+但它也更依赖整套环境：
+
+- GPU 和 HCA 的 PCIe 拓扑。
+- GPU 驱动和网卡驱动。
+- 固件版本。
+- OFED 或 rdma-core。
+- `nvidia-peermem` 等 peer memory 组件。
+- NCCL 版本和通信策略。
+
+所以可以把 GPUDirect RDMA 理解成 RDMA 在 GPU 场景下的一条“更直接但也更挑环境”的路径。
+
+## GDR 开关该怎么理解
+
+在 NCCL 里，常见的 GDR 相关变量包括：
+
+```bash
+export NCCL_NET_GDR_LEVEL=LOC
+export NCCL_NET_GDR_READ=0
+```
+
+按当前 NCCL 文档，`NCCL_NET_GDR_LEVEL` 更推荐用字符串值表达拓扑距离：
+
+| 值 | 含义 |
+|---|---|
+| LOC | 不使用 GPUDirect RDMA |
+| PIX | GPU 和 NIC 在同一个 PCI switch 下时使用 |
+| PXB | GPU 和 NIC 经过 PCI switches 时使用 |
+| PHB | GPU 和 NIC 在同一个 NUMA 节点内时使用 |
+| SYS | 即使跨 NUMA/SMP interconnect 也允许使用 |
+
+这不是说每个环境都应该设置成 `SYS`。更合适的理解是：GDR level 越高，NCCL 允许使用 GPUDirect RDMA 的 GPU-HCA 路径范围就越大。
+
+基础理解可以记成一句话：
+
+```text
+GDR level 控制 GPU 和 HCA 离多远时，NCCL 仍然愿意使用 GPUDirect RDMA。
+```
+
+## 一个很小的例子
+
+假设有两台 8 卡 GPU 服务器，每台都有多块 400G HCA。我们先逐块 HCA 测 RDMA 带宽，每块都接近 400G。
+
+这个结果能说明什么？
+
+它说明基础 RDMA 链路大概率是通的，而且单条链路的带宽看起来正常。
+
+但它不能直接说明：
+
+- NCCL 多机多卡 collective 一定正常。
+- GPU 显存直连 HCA 的路径一定正常。
+- 所有 GPU-HCA 组合都一样好。
+- 多 rank 并发时仍然表现一样。
+
+这就是学习 RDMA 时一个很重要的分层视角：
+
+```text
+IP 网络通
+!= RDMA verbs 路径正常
+!= NCCL 选路正确
+!= GPUDirect RDMA 路径稳定
+!= 真实训练性能达标
+```
+
+基础测试很重要，但它只是地图上的一层。
+
+## 怎么建立学习顺序
+
+如果是刚开始学习 RDMA，我建议按这个顺序建立概念：
+
+1. 先理解传统网络路径和 RDMA 路径的区别。
+2. 再理解 HCA、MR、QP、CQ 这些核心对象。
+3. 然后区分 InfiniBand、RoCE 和普通 TCP/IP。
+4. 接着看一台机器上有哪些 HCA，以及它们和 GPU 的拓扑关系。
+5. 再理解 NCCL collective、算法和协议。
+6. 最后看 GPUDirect RDMA 怎样把 HCA 和 GPU 显存连起来。
+
+对应到常见命令，可以从这些开始：
+
+```bash
+ibv_devices
+ibv_devinfo
+ibstat
+ibdev2netdev
+rdma link show
+nvidia-smi topo -m
+```
+
+这些命令不会让你立刻成为 RDMA 专家，但它们能帮你把抽象概念和真实设备对应起来。
+
+## 总结
+
+RDMA 的核心，是让 HCA 在授权后直接搬运内存数据，从而减少 CPU、内核协议栈和中间拷贝参与。
+
+HCA 是这条路径里的关键硬件。MR、QP、CQ、key 这些概念，都是为了让“直接访问内存”这件事既高效又可控。
+
+到了 GPU 训练场景，NCCL 会把 AllReduce、Broadcast、ReduceScatter 这类 collective 拆成具体算法和协议，再映射到 NVLink、PCIe、RDMA、HCA 等路径上。
+
+而 GPUDirect RDMA 又把问题往前推了一步：能不能让 HCA 直接访问 GPU 显存，减少 CPU 内存中转。
+
+所以可以把这几个概念串起来：
+
+```text
+RDMA：让网卡直接搬运内存
+HCA：执行 RDMA 搬运的设备
+HCA mix：多块 HCA 和多条路径的选择问题
+NCCL collective：多张 GPU 共同完成一次通信动作
+NCCL 算法：Ring / Tree / CollnetDirect / CollnetChain / NVLS 等 collective 实现方式
+NCCL 协议：Simple / LL / LL128 等数据传输方式
+GPUDirect RDMA：让 HCA 直接访问 GPU 显存
+```
+
+真正理解 RDMA，不是背缩写，而是看清楚数据路径：数据在哪里，谁有权限搬它，经过哪块设备，最后怎么知道它搬完了。
+
+## 参考资料
+
+- [NVIDIA RDMA Aware Networks Programming User Manual](https://docs.nvidia.com/networking/display/rdmaawareprogrammingv17)
+- [Linux Kernel InfiniBand Documentation](https://www.kernel.org/doc/html/latest/infiniband/index.html)
+- [NVIDIA GPUDirect RDMA Documentation](https://docs.nvidia.com/cuda/archive/13.0.1/gpudirect-rdma/index.html)
+- [NVIDIA NCCL Collective Operations](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/usage/collectives.html)
+- [NVIDIA NCCL Environment Variables](https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/env.html)
