@@ -1,0 +1,157 @@
+export const metadata = {
+    title: '不走 kubectl exec：用 Agent 架构做 Kubernetes 受控运维接入',
+    date: '2026-06-08',
+    address: 'csh0101.cc',
+    summary: 'SSHWay 如何用 Backend、Aggregator、Agent 三段式架构，把 WebShell、标准 SSH、SFTP、Pod Logs、AgentGroup 和 PingMesh 做成一条受控运维接入路径。',
+    tags: [ 'Kubernetes', 'SSH', 'Platform Engineering', 'AI Infra' ]
+}
+
+# 不走 kubectl exec：用 Agent 架构做 Kubernetes 受控运维接入
+
+`kubectl exec -it` 很顺手。你有 kubeconfig，有权限，敲一行命令，就能进容器排查问题。
+
+但当这件事从个人调试变成平台能力，问题会立刻变多：谁可以进入哪个集群、哪个 namespace、哪个 Pod？用户进入容器的行为怎么审计？Pod 重建以后入口还稳不稳？浏览器 WebShell、OpenSSH、SFTP、Pod 日志能不能走同一套权限和审计？内网节点要不要暴露端口？Backend 要不要持有每个业务集群的 kubeconfig？
+
+SSHWay 的设计从这些问题开始。它没有给 `kubectl exec` 套一层 Web API。它把运维接入拆成三个角色：
+
+```text
+Browser / OpenSSH / SFTP client
+  -> Backend
+  -> Aggregator
+  -> Agent on target node
+  -> containerd / CRI log files / local filesystem
+```
+
+Backend 面向用户，处理 HTTP API、WebSocket、SSH Gateway、SFTP Gateway、认证、授权和审计。Aggregator 维护 Backend 与 Agent 之间的 mTLS 控制面，做路由、inventory、Agent 状态和探测结果存储。Agent 跑在节点侧，靠近 containerd、本地文件系统和 CRI 日志文件，负责真正的 shell、文件、日志和网络探测能力。
+
+这条边界决定了整个系统的形状：Backend 不需要直接摸节点，Agent 不需要暴露入站端口，目标容器不需要运行 `sshd`。
+
+## 为什么不是 Backend 直接管 Kubernetes API
+
+最直觉的方案是让 Backend 持有 kubeconfig，然后调用 Kubernetes API 创建 exec、读日志、查 Pod。这个方案早期开发很快，但它把几个问题集中在 Backend 身上。
+
+第一，Backend 会变成所有集群权限的汇聚点。多集群、多租户、内网隔离环境下，这个风险很难压低。
+
+第二，Backend 离目标容器太远。它看不到节点本地 containerd 状态、CRI log path、runtime namespace，也不能做节点侧最后校验。
+
+第三，网络路径不一定允许 Backend 直连每个集群 API Server。边缘站点、内网集群、防火墙分区都会让这条路径变脆。
+
+SSHWay 让 Agent 主动连接 Aggregator。Agent 与 Aggregator 之间使用出站 mTLS gRPC 双向流，Aggregator 再给 Backend 提供内部控制 API。这样节点不需要开放入站端口，Backend 也不需要掌握每个业务集群的 kubeconfig。
+
+Agent 定期上报本节点 inventory：cluster、node、namespace、pod、container、container id、runtime、runtime namespace。Backend 要创建 session 时，先根据 inventory 解析目标，拿到完整 runtime target，再通过 Aggregator 路由到目标节点 Agent。
+
+Agent 收到 `OpenShell` 后仍然会做本地校验：目标是否属于当前节点，container 是否存在且运行中，runtime namespace 是否允许，shell、cwd、env 是否符合策略。Backend RBAC 负责入口权限，Agent 本地校验负责守住节点侧最后一关。
+
+## WebShell 的实际链路
+
+一次浏览器 WebShell 不是简单的 WebSocket 转发。它大概走这条链路：
+
+1. 用户在前端选择 cluster、namespace、pod、container。
+2. Backend 校验用户身份和权限，解析 target，写入审计上下文。
+3. Backend 请求 Aggregator 创建或 attach 一个 session。
+4. Aggregator 根据 inventory 找到目标 Agent 的 mTLS 长连接。
+5. Agent 通过 containerd API 在目标容器内创建 exec process，并打开 PTY。
+6. stdin、stdout、stderr、resize、signal、close、exit status 都通过结构化协议流转。
+
+生产路径里不执行 `kubectl`、`crictl`、`ctr`，也不解析 CLI 输出判断状态。Agent 直接使用 containerd Go client。这样 shell 生命周期、错误码、清理、审计和流控都能在协议里表达。
+
+协议里也没有把所有字段塞进每条消息。连接级身份来自 mTLS 和 `AgentHello`，包括 agent id、node id、cluster id、agent version、boot id。会话级消息带 session id 和 target。终端数据只带 session id、stream、direction、sequence 和 payload。这个拆法能减少冗余，也能降低状态不一致的概率。
+
+## 标准 SSH Gateway：容器不需要 sshd
+
+WebShell 解决了浏览器入口，但很多运维习惯仍然围绕 OpenSSH。用户希望能这样登录：
+
+```sh
+ssh -p 2222 '<user_id>:<ssh_session_id>'@sshway.example.com
+```
+
+SSHWay 的 SSH Gateway 跑在 Backend 侧。它接收标准 SSH 协议连接，把 `pty-req`、`window-change`、`shell`、stdin/stdout/stderr 映射到内部 session service，再复用同一条 Backend -> Aggregator -> Agent -> containerd exec 路径。
+
+这意味着几件事：
+
+- SSH 登录认证的是 SSHWay 用户和 target 权限，不是容器 Linux 用户。
+- 目标容器不需要安装或启动 OpenSSH `sshd`。
+- SSH 私钥、短期 token 和 host key 都留在 Backend 侧，不会发给 Agent。
+- Agent 不暴露 SSH 端口。
+- `direct-tcpip`、X11 forwarding、agent forwarding、legacy SCP 这类能力可以明确拒绝并审计。
+
+SSHD 兼容性的目标不是 100% 复刻 OpenSSH server。SSHWay 要让用户直觉接近 `sshd`：稳定 host key，清晰的 `known_hosts` 操作，password token 和 public key 登录，Pod/Deployment/StatefulSet/alias 目标，可靠的 exit status、Ctrl-C、resize、EOF 行为，以及明确的限流和审计。
+
+这也解释了为什么 `exec` 默认关闭。`ssh host command` 会把产品面从交互式 shell 扩大到远程命令执行，审计、授权、命令策略都要重新定义。默认只支持 interactive shell，等策略成熟后再打开 allowlist，风险更可控。
+
+## 文件传输和 Pod Logs 也走同一套边界
+
+SFTP Gateway 和 SSH Gateway 是两个协议入口。SFTP Gateway 只处理 SSH `sftp` subsystem，把 list、stat、upload、download、delete、rename、mkdir 映射到内部 File Transfer API。OpenSSH 9.0 以后默认用 SFTP transport 的 `scp` 可以兼容，legacy `scp -O` 故意不支持，因为它要求服务端执行 `scp -t` 或 `scp -f`。
+
+文件传输不会把宿主机路径直接暴露给用户。Backend 先做权限、path policy、上传下载大小限制和审计。Agent 侧再执行文件能力。文件内容、token、密码不进入审计记录。
+
+Pod Logs 也遵守同一原则。Backend 不挂 kubeconfig 读 Kubernetes logs API，Aggregator 不读节点文件。Agent 在目标节点上通过 containerd/CRI metadata 解析容器日志路径，然后只读取允许 log roots 下的 CRI log file，例如 `/var/log/pods` 和 `/var/log/containers`。
+
+日志能力支持 snapshot 和 follow，支持 tail lines、limit bytes、since、previous、timestamps。日志内容不会写进审计，审计只记录 actor、target、时间范围、bytes、lines、结果和错误。大日志必须流式处理，Backend、Aggregator、Agent 都有大小、速率、并发和空闲超时限制。
+
+这套设计让 Terminal、Files、Logs 看起来像三个功能页，但底层都遵守同一个平台边界：Backend 管入口和权限，Aggregator 管安全路由，Agent 管节点侧执行。
+
+## Capability Status：平台要知道 Agent 还能不能干活
+
+Agent 越做越多以后，光知道 Agent 在线不够。一个 Agent 的主进程可能还活着，但 shell worker 挂了；file worker 正常，logs worker 可能因为日志路径或权限问题处于 degraded。
+
+SSHWay 把 shell、file、logs 拆成 capability，并支持进程隔离：
+
+```text
+agent main process
+  -> agent-worker-shell
+  -> agent-worker-file
+  -> agent-worker-logs
+```
+
+Agent heartbeat 上报 `capability_statuses` 数组，不写死 `shell_worker_state`、`file_worker_state`、`logs_worker_state` 这类字段。未来 capability 会增加，一个 worker 也可能承载多个 capability。控制面真正关心的是能力是否可用，不是当前实现正好叫什么 worker。
+
+每个 capability 状态分两层：
+
+- process state：`STOPPED`、`STARTING`、`RUNNING`、`BACKOFF`、`FAILED`
+- capability health：`STARTING`、`READY`、`DEGRADED`、`STOPPED`、`UNKNOWN`
+
+这能表达更多真实情况。例如 worker 进程在 RUNNING，但 runtime socket 不可用，capability health 应该是 DEGRADED。老版本 Agent 没上报 capability status，Frontend 应该显示 UNKNOWN，不能直接当成失败。
+
+部署验收也能利用这条状态链。比如 smoke gate 可以要求所有 online Agent 都报告 shell、file、logs 或 network-probe 为 READY。发布门禁要看 Pod Ready，也要看 SSHWay 真正需要的执行能力是否健康。
+
+## AgentGroup 和 PingMesh：从接入走向诊断
+
+单个 Agent 负责本节点执行，Aggregator 负责中心路由。这个模型已经能跑 WebShell、SSH、文件、日志。但当节点规模变大，或者场景进入边缘集群、训练集群，中心侧只看每个 Agent 的 heartbeat 还不够。
+
+AgentGroup 给 Agent 增加本地 membership 层。每个节点 Agent 仍然只操作自己的 container runtime，但 Agent 之间可以用 SWIM 风格 gossip 维护成员表，记录 alive、suspect、dead、left。Aggregator 仍然是中心控制入口，AgentGroup 只是让节点侧拥有局部成员视图，并能上报 group summary。
+
+这为 PingMesh 打了基础。网络探测不是简单 ICMP。ICMP 可以做最基础的 RTT 和可达性，但训练、推理和微服务流量还关心 TCP connect、jitter、loss、NIC drops、RDMA/RoCE counters、ECN/PFC、按需吞吐测试，甚至 NCCL microbenchmark。
+
+第一阶段可以做轻量、长期、低开销的 PingMesh-like 探测：ICMP、TCP connect、本机网卡指标、基于拓扑的采样矩阵。第二阶段再服务分布式训练：RDMA 设备发现、RoCE counters、iperf/perftest/NCCL 按需诊断。
+
+NodeTopology Provider 负责给这些结果补上下文。它从本机 hostname、网卡、sysfs、Downward API 和静态配置里合成拓扑快照，给结果打上 zone、rack、ToR、subnet、network plane、node pool 等标签。没有字段就保持 unknown 或空，不编默认值。
+
+有了拓扑，PingMesh 才能回答更有用的问题：是单节点网卡异常，还是一个 ToR 下多节点同时异常？是 ICMP 正常但 TCP 失败，还是跨 subnet 链路 RTT 抬高？训练任务启动前，这组节点是否适合放进同一个 job？
+
+## 部署上的几个硬边界
+
+SSHWay 当前更像生产试运行到 late beta 之间的系统。很多能力已经实现，但 chart 默认保持保守：SSH Gateway、SFTP、Logs、AgentGroup、NetworkProbe、Topology 都默认关闭。生产环境要显式启用需要的协议入口和 Agent capability。
+
+几个部署边界值得单独强调：
+
+- Agent 用 DaemonSet 跑在节点侧，当前 runtime 支持 containerd。
+- Agent 需要挂载 containerd runtime directory，因为 containerd exec 会创建 FIFO。
+- Pod Logs 只读挂载 `/var/log/pods` 和 `/var/log/containers`，并通过 allowed roots 限制读取范围。
+- Aggregator 是 Agent 和 Backend 的 mTLS 汇聚点。
+- Agent 主动连接 Aggregator，不暴露入站端口。
+- SSH/SFTP host key 必须来自稳定 Secret，不能每次 Helm release 随机生成。
+- Aggregator 才能读取 `client-ca.key`，Backend 和 Agent 不应该挂载它。
+- Backend SSH/SFTP token secret 只在 Backend 侧使用，不发给 Aggregator 或 Agent。
+- JSONL audit、session state、inventory、enrollment state 可以落到持久卷。
+- `helm lint`、`helm template`、deploy smoke、ssh/sftp/logs/file smoke 都应该成为发布门禁。
+
+这些边界看起来很碎，但它们决定了这个系统能不能从 demo 走向产品。一个受控接入平台的难点不在于把 shell 搬到网页里，而在于每条入口、每个凭证、每次路由、每个能力状态、每段审计和每次部署都能被解释。
+
+## 小结
+
+SSHWay 的核心是重新定义 Kubernetes 运维接入的责任边界，而不只是替代 `kubectl exec` 的命令行体验。
+
+Backend 负责用户入口、权限、协议适配和审计。Aggregator 负责 mTLS 长连接、路由、状态汇聚和流控。Agent 负责节点侧 containerd、文件、日志、capability 和网络探测。WebShell、OpenSSH、SFTP、Pod Logs、Agent health、AgentGroup、PingMesh 都沿着这条边界长出来。
+
+当你把这类系统做成平台时，真正要产品化的是一整套受控访问路径，shell 只是最容易被看见的入口。
