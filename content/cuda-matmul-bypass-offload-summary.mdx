@@ -1,0 +1,379 @@
+import { Figure } from "@/components/mdx/article";
+import Table from "@/components/mdx/table";
+
+export const metadata = {
+    title: 'CUDA 深入浅出（七）：用 Bypass 和 Offload 总结 GEMM 优化',
+    date: '2026-06-24',
+    address: 'csh0101.cc',
+    summary: '把 Tiling、coalesced load、shared memory layout、register tiling、Tensor Core、TMA 和 WGMMA 放回 bypass 与 offload 两条思路里。',
+    series: 'CUDA 深入浅出',
+    seriesOrder: 7,
+    tags: [ 'CUDA', 'GPU', 'GEMM' ]
+}
+
+# CUDA 深入浅出（七）：用 Bypass 和 Offload 总结 GEMM 优化
+
+前面几篇讲了很多词：
+
+```text
+tiling
+coalesced load
+shared memory bank conflict
+register tiling
+Tensor Core MMA
+TMA
+WGMMA
+persistent kernel
+software pipelining
+```
+
+这些词容易让人误以为 CUDA GEMM 优化是一串技巧清单。
+
+换一个角度看，它们大多在做两件事：
+
+```text
+Bypass: 绕开慢的、散的、重复的通用路径
+Offload: 把适合硬件做的事交给专用单元
+```
+
+这篇不继续加新技巧。我们把前面的内容收束一下，给后面读 CUTLASS、CuTe、Triton 或手写 kernel 留一个判断框架。
+
+<Figure
+    src="/articles/cuda-deep-dive/bypass-offload-map.svg"
+    alt="CUDA GEMM optimizations summarized as bypass and offload"
+    width={1280}
+    height={720}
+    caption="CUDA GEMM 优化可以先分成两类：bypass 负责绕开低效路径，offload 负责把工作交给更专门的硬件路径。"
+/>
+
+## Bypass：绕开低效路径
+
+`bypass` 不是跳过计算。
+
+矩阵乘法该做多少乘加，还是要做多少乘加。你不能少算 `C[i][j]` 的点积。
+
+`bypass` 绕开的是低效的数据路径。
+
+最朴素的 GEMM kernel 会让每个 thread 自己去 global memory 读 `A` 和 `B`：
+
+```text
+global memory -> register -> FMA
+global memory -> register -> FMA
+global memory -> register -> FMA
+...
+```
+
+旁边很多 thread 明明需要同一批 `A`、`B`，却各自从远处拿。HBM 带宽很快，但它离 SM 远。你让它反复服务同一批数据，Tensor Core 或 CUDA core 就会等。
+
+Tiling 的 bypass 很直接：
+
+```text
+global memory -> shared memory -> register -> FMA
+```
+
+一个 block 先把 `A_tile`、`B_tile` 搬进 shared memory。后面的重复读取发生在 shared memory 里，不再反复回到 global memory。
+
+你没有绕开数学运算。你绕开了重复 global load。
+
+## Coalescing 也是 bypass
+
+coalesced load 看起来像访存格式问题。
+
+它也可以放进 bypass 里看。
+
+一个 warp 里的 32 个 lane 如果访问连续地址，硬件能用少量 memory transaction 搬回数据。
+
+如果这些 lane 访问跨步地址，硬件要发出更多 transaction。你代码里只写了 32 次 load，但硬件搬了很多段内存，每段里只有一小部分数据有用。
+
+coalescing 绕开的东西是：
+
+```text
+碎片化 memory transaction
+```
+
+vectorized load 继续往前走一步。一个 thread 一次搬 `float4`，减少 scalar load 指令和地址计算。
+
+它绕开的东西是：
+
+```text
+过多的 load 指令
+过多的 per-element 地址计算
+```
+
+所以第三篇和第五篇讲的不是两个孤立技巧。它们都在问同一个问题：
+
+```text
+同样要从 global memory 拿数据，能不能让硬件少折腾几次？
+```
+
+## Shared memory 里的 bypass
+
+数据进了 shared memory，问题没有结束。
+
+shared memory 有 bank。一个 warp 里的多个 lane 如果打到同一个 bank 的不同地址，硬件要拆成多轮处理。
+
+padding 和 layout optimization 绕开的东西是：
+
+```text
+shared memory bank serialization
+```
+
+比如 `float As[32][32]` 按列读时，连续 lane 可能都打到同一个 bank。
+
+你把它改成：
+
+```cuda
+__shared__ float As[32][33];
+```
+
+每行多一列，stride 从 32 变成 33。按列读时，lane 会散到不同 bank。
+
+这不是为了让数组看起来奇怪。你在告诉硬件：别把一个 warp 挤到同一个门口。
+
+shared memory transpose 也类似。
+
+global memory 读取时，你希望地址连续。计算阶段读 shared memory 时，你又希望 lane 读得顺、bank 不冲突、register fragment 好组织。
+
+所以 global -> shared 这一步经常顺手换布局。
+
+你绕开的是后面计算阶段的别扭读取。
+
+## Register tiling 绕开 shared memory 的重复读取
+
+register tiling 把 bypass 推到 thread 内部。
+
+一个 thread 如果只算一个 `C` 元素，它每一轮从 shared memory 读一个 `a`、一个 `b`，然后更新一个 accumulator。
+
+一个 thread 如果算 `2×2` 个 `C` 元素，它每一轮可以读两个 `a`、两个 `b`，然后更新四个 accumulator：
+
+```text
+c00 += a0 * b0
+c01 += a0 * b1
+c10 += a1 * b0
+c11 += a1 * b1
+```
+
+同一个 `a0` 被用了两次。
+
+同一个 `b0` 也被用了两次。
+
+这些复用发生在 register 里。
+
+register tiling 绕开的东西是：
+
+```text
+重复 shared memory read
+```
+
+代价也清楚。每个 thread 要维护更多 accumulator，用更多 register。register 用多了，一个 SM 能同时驻留的 warp 可能变少。
+
+所以 bypass 不是免费省钱。你把压力从一个地方搬到另一个地方。写 kernel 时，你要看新的压力落在哪。
+
+## Offload：交给专用硬件
+
+Bypass 主要解决路径问题。
+
+Offload 解决执行者问题。
+
+普通 CUDA core 做的是标量 FMA：
+
+```text
+c += a * b
+```
+
+Tensor Core 做的是矩阵乘加：
+
+```text
+D = A x B + C
+```
+
+你可以把它看成一次很大的 offload：warp 不再把矩阵乘法拆成一堆标量 FMA 自己做，而是把 fragment 交给 Tensor Core。
+
+这改变了 kernel 的中心。
+
+以前你关心：
+
+```text
+每个 thread 拿哪个 a？
+每个 thread 拿哪个 b？
+每个 thread 更新哪个 c？
+```
+
+Tensor Core 版本里，你还要关心：
+
+```text
+warp tile 是什么形状？
+lane 持有哪些 fragment？
+shared memory layout 能不能喂给 MMA？
+accumulator fragment 怎么写回？
+```
+
+Offload 会省掉一部分显式循环，也会带来更严格的数据形状要求。
+
+## TMA 是搬运的 offload
+
+Tensor Core offload 计算。
+
+TMA offload 搬运。
+
+没有 TMA 时，global -> shared 的 tile load 需要 thread 自己做很多事：
+
+```text
+算 global address
+算 shared address
+处理 leading dimension
+处理边界
+发起 load
+写 shared memory
+```
+
+TMA 把多维 tensor tile 的搬运交给专用路径。你描述 tile 的形状、步长和目标 shared memory，硬件异步搬。
+
+这不是让数据瞬间到达。TMA 仍然要花时间搬数据。
+
+它的价值在于，你可以让搬运和计算错开：
+
+```text
+TMA 搬下一块 tile
+WGMMA 算当前 tile
+```
+
+计算单元少等，搬运单元也少空。
+
+## WGMMA 是更大协作粒度的 offload
+
+普通 MMA 通常以 warp 为协作单位。
+
+WGMMA 把协作粒度扩到 warp group。
+
+你可以把它理解成：多个 warp 一起向 Tensor Core 提交更大的矩阵乘加工作。
+
+这会让代码多出一些新东西：
+
+```text
+warp group
+descriptor
+async MMA
+barrier
+```
+
+这些词很吓人，但它们仍然放在 offload 框架里。
+
+你把更大的矩阵乘加交给更专门的硬件路径。为了让这条路径吃饱，你要把数据布局、同步和流水线安排好。
+
+## Persistent kernel 是调度层面的 bypass
+
+前面的 bypass 多半围绕数据路径。
+
+persistent kernel 绕开的东西更靠近调度。
+
+普通写法里，一个 CTA 负责一个或几个固定的 `C_tile`。如果不同 tile 的工作量不均，或者 grid 很大，SM 之间可能出现尾部不均衡。
+
+persistent kernel 会让一批长期驻留的 CTA 从工作队列里反复领取 tile：
+
+```text
+CTA 取一个 tile
+CTA 算完
+CTA 再取下一个 tile
+```
+
+它绕开的是静态分配带来的空等。
+
+这个思路在 GEMM 里不一定每次都需要。对形状规整的大 GEMM，普通 grid 调度已经很好。到了 grouped GEMM、MoE、长尾任务或者复杂 pipeline，persistent kernel 更容易体现价值。
+
+## Software pipelining 把 bypass 和 offload 接起来
+
+software pipelining 不属于单纯的 bypass，也不属于单纯的 offload。
+
+它把两者接起来。
+
+一个现代 GEMM kernel 里，硬件可能同时做这些事：
+
+```text
+TMA 搬下一块 A/B
+Tensor Core 算当前块 MMA
+register accumulator 留住部分结果
+shared memory 的另一个 stage 等待复用
+```
+
+你用 bypass 减少低效路径。
+
+你用 offload 交给专用硬件。
+
+software pipeline 负责安排它们的时间顺序。
+
+如果安排得好，计算覆盖搬运延迟。Tensor Core 少等数据，TMA 也少等空 buffer。
+
+如果安排不好，代码里写了 TMA、WGMMA、double buffer，硬件还是排队。
+
+## 把整个系列放回一张表
+
+<Table
+    data={[
+        { topic: "Tiling", kind: "Bypass", avoids: "重复 global memory load" },
+        { topic: "Coalesced Load", kind: "Bypass", avoids: "碎片化 memory transaction" },
+        { topic: "Vectorized Load", kind: "Bypass", avoids: "过多 scalar load 指令" },
+        { topic: "Shared Memory Layout", kind: "Bypass", avoids: "bank conflict 和别扭读取" },
+        { topic: "Register Tiling", kind: "Bypass", avoids: "重复 shared memory read" },
+        { topic: "Tensor Core MMA", kind: "Offload", avoids: "用标量 FMA 手写小矩阵乘加" },
+        { topic: "TMA", kind: "Offload", avoids: "thread 手动搬多维 tile" },
+        { topic: "WGMMA", kind: "Offload", avoids: "warp 级 MMA 粒度不够" },
+        { topic: "Persistent Kernel", kind: "Bypass", avoids: "静态分配和尾部空等" },
+        { topic: "Software Pipeline", kind: "Both", avoids: "搬运和计算串行等待" }
+    ]}
+    columns={[
+        { key: "topic", title: "主题", width: "210px" },
+        { key: "kind", title: "类型", width: "130px" },
+        { key: "avoids", title: "绕开或交给硬件处理的东西" }
+    ]}
+/>
+
+这个表不追求严密分类。
+
+它更像读 kernel 时的一张检查单。
+
+你看到一段 CUDA GEMM 代码，可以先问四个问题：
+
+```text
+1. 这段代码让数据少走了哪条慢路？
+2. 这段代码把什么工作交给了专用硬件？
+3. 新的瓶颈会落到哪里？
+4. 搬运和计算有没有重叠？
+```
+
+如果你能回答这四个问题，术语就不会散。
+
+## 最后回到矩阵乘法
+
+矩阵乘法公式很短：
+
+```text
+C[i][j] = sum(A[i][k] * B[k][j])
+```
+
+GPU GEMM kernel 很长，因为你要把这个公式喂给一台分层很细的机器。
+
+global memory 适合放大数据。
+
+shared memory 适合 block 内复用。
+
+register 适合 thread 内复用。
+
+Tensor Core 适合小矩阵乘加。
+
+TMA 适合搬多维 tile。
+
+warp scheduler 适合在足够多的 warp 之间切换。
+
+CUDA 优化不是把代码写得更绕。你在回答两个问题：
+
+```text
+这份数据能不能少走远路？
+这份工作能不能交给更合适的硬件？
+```
+
+前者是 bypass。
+
+后者是 offload。
+
+这个系列从矩阵分块开始，最后落到这两个动作上。以后再读新的 GPU 优化词，先把它放回这两个框里，很多名词会安静下来。

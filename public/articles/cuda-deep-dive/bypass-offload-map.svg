@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Bypass and offload map for CUDA GEMM optimization</title>
+  <desc id="desc">CUDA GEMM optimizations can be summarized as bypassing slow generic paths and offloading work to specialized hardware.</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfcff}
+      .title{font:700 34px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}
+      .sub{font:500 17px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#73798a}
+      .head{font:700 25px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}
+      .label{font:700 18px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}
+      .small{font:600 14px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687084}
+      .mono{font:600 14px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#3f4658}
+      .panel{fill:#fff;stroke:#dce3f2;stroke-width:2}
+      .bypass{fill:#eaf2ff;stroke:#86aef2}
+      .offload{fill:#fff0f5;stroke:#dd8bad}
+      .chip{fill:#f7f9fc;stroke:#dce3f2;stroke-width:1.5}
+      .arrow{fill:none;stroke:#7d879c;stroke-width:2.4;marker-end:url(#arrow)}
+      .blue{fill:#dbe9ff;stroke:#86aef2}
+      .pink{fill:#ffd8e6;stroke:#dd8bad}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7d879c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="72">CUDA GEMM 优化的两种动作：Bypass 和 Offload</text>
+  <text class="sub" x="64" y="105">前面的术语很多，但大部分优化都在做两件事：绕开低效路径，交给专用硬件。</text>
+
+  <rect class="panel bypass" x="70" y="160" width="535" height="440" rx="24"/>
+  <text class="head" x="110" y="212">Bypass</text>
+  <text class="small" x="110" y="242">让数据少走慢路，少走散路，少走重复路。</text>
+
+  <rect class="chip blue" x="110" y="285" width="410" height="58" rx="14"/>
+  <text class="label" x="138" y="319">Tiling</text>
+  <text class="small" x="238" y="319">绕开重复 global load</text>
+
+  <rect class="chip blue" x="110" y="360" width="410" height="58" rx="14"/>
+  <text class="label" x="138" y="394">Coalesced / Vectorized Load</text>
+  <text class="small" x="365" y="394">绕开碎片化访问</text>
+
+  <rect class="chip blue" x="110" y="435" width="410" height="58" rx="14"/>
+  <text class="label" x="138" y="469">Shared Layout / Padding</text>
+  <text class="small" x="340" y="469">绕开 bank conflict</text>
+
+  <rect class="chip blue" x="110" y="510" width="410" height="58" rx="14"/>
+  <text class="label" x="138" y="544">Register Tiling</text>
+  <text class="small" x="270" y="544">绕开重复 shared read</text>
+
+  <rect class="panel offload" x="675" y="160" width="535" height="440" rx="24"/>
+  <text class="head" x="715" y="212">Offload</text>
+  <text class="small" x="715" y="242">把循环、搬运、调度交给更专门的硬件路径。</text>
+
+  <rect class="chip pink" x="715" y="285" width="410" height="58" rx="14"/>
+  <text class="label" x="743" y="319">Tensor Core MMA</text>
+  <text class="small" x="900" y="319">交给矩阵乘加单元</text>
+
+  <rect class="chip pink" x="715" y="360" width="410" height="58" rx="14"/>
+  <text class="label" x="743" y="394">TMA</text>
+  <text class="small" x="820" y="394">交给多维异步搬运单元</text>
+
+  <rect class="chip pink" x="715" y="435" width="410" height="58" rx="14"/>
+  <text class="label" x="743" y="469">WGMMA</text>
+  <text class="small" x="840" y="469">交给 warp group 级 MMA</text>
+
+  <rect class="chip pink" x="715" y="510" width="410" height="58" rx="14"/>
+  <text class="label" x="743" y="544">Software Pipeline</text>
+  <text class="small" x="910" y="544">让搬运和计算重叠</text>
+
+  <rect x="200" y="635" width="880" height="52" rx="16" fill="#f7f9fc" stroke="#dce3f2"/>
+  <text class="mono" x="238" y="668">读 kernel 时先问：这段代码绕开了什么？又把什么交给了硬件？</text>
+</svg>
