@@ -1,0 +1,406 @@
+import { Figure } from "@/components/mdx/article";
+
+export const metadata = {
+    title: 'CUDA 深入浅出（零点五）：GPU 内存层级和 GEMM 数据路径',
+    date: '2026-06-24',
+    address: 'csh0101.cc',
+    summary: '先建立 global memory、L2、shared memory、register 和 GEMM M/N/K 的基础图，再看矩阵乘法为什么总是在搬数据。',
+    series: 'CUDA 深入浅出',
+    seriesOrder: 0.5,
+    tags: [ 'CUDA', 'GPU', 'GEMM' ]
+}
+
+# CUDA 深入浅出（零点五）：GPU 内存层级和 GEMM 数据路径
+
+上一篇把 CUDA 的执行层级摆了一遍：
+
+```text
+grid -> block -> warp -> thread
+```
+
+这一篇看数据怎么走。
+
+矩阵乘法优化里，很多术语听起来很散：
+
+```text
+global memory
+shared memory
+register
+coalesced load
+bank conflict
+Tensor Core
+```
+
+它们其实都站在同一条数据路径上。
+
+先把路径画出来：
+
+```text
+global memory / HBM
+  -> L2 cache
+  -> shared memory
+  -> register
+  -> FMA / Tensor Core
+```
+
+CUDA GEMM 优化的主线就是：让数据沿着这条路走得少一点、顺一点、近一点。
+
+<Figure
+    src="/articles/cuda-deep-dive/gemm-memory-path.svg"
+    alt="GEMM data path from global memory through L2, shared memory and registers to compute units"
+    width={1280}
+    height={720}
+    caption="GEMM 的数据路径：global memory 容量大但远，shared memory 和 register 更近，优化的核心是让重复使用尽量发生在近处。"
+/>
+
+## GEMM 里的 M、N、K
+
+矩阵乘法通常写成：
+
+```text
+C = A × B
+```
+
+更完整一点：
+
+```text
+A: M × K
+B: K × N
+C: M × N
+```
+
+也就是：
+
+```text
+C[i][j] = sum(A[i][k] * B[k][j]) for k = 0..K-1
+```
+
+`M` 是 `C` 的行数。
+
+`N` 是 `C` 的列数。
+
+`K` 是点积长度。
+
+你可以把它想成：
+
+```text
+C 的一个元素
+  = A 的一行
+  · B 的一列
+```
+
+如果 `A`、`B`、`C` 都是 `N×N`，那只是 `M=N=K` 的特殊情况。
+
+后面文章里为了讲公式方便，经常用 `N×N`。真正的 GEMM 里，`M`、`N`、`K` 可以不同。
+
+## row-major 决定地址怎么走
+
+C/C++ 里常见的二维数组按 row-major 存。
+
+意思是同一行的元素连续放在内存里。
+
+比如：
+
+```text
+A[0][0], A[0][1], A[0][2], A[0][3],
+A[1][0], A[1][1], A[1][2], A[1][3],
+...
+```
+
+如果矩阵宽度是 `N`，那么：
+
+```text
+A[row][col] 的线性下标 = row * N + col
+```
+
+所以同一行连续访问很顺：
+
+```text
+A[row][0]
+A[row][1]
+A[row][2]
+```
+
+同一列访问会跨行：
+
+```text
+A[0][col]
+A[1][col]
+A[2][col]
+```
+
+它们之间隔着整整一行。
+
+这件事后面会影响 coalesced load。GPU 不看你在数学上是行还是列，它只看地址是不是连续。
+
+## global memory 是远处的大仓库
+
+global memory 通常对应 GPU 的 HBM 或显存。
+
+它容量大，带宽高，但离计算单元远。一次访问的延迟比 register、shared memory 高很多。
+
+矩阵 `A`、`B`、`C` 一开始都在 global memory 里：
+
+```text
+A in global memory
+B in global memory
+C in global memory
+```
+
+kernel 计算时，thread 会从 global memory 读 `A` 和 `B`，最后把结果写回 `C`。
+
+最朴素的矩阵乘法会这样做：
+
+```text
+读 A
+读 B
+算一次乘加
+继续读 A
+继续读 B
+...
+写 C
+```
+
+如果每次乘加都去 global memory 拿数据，GPU 很容易在等内存。
+
+所以 CUDA GEMM 的第一层优化就是：不要反复去远处拿同一批数据。
+
+## L2 cache 会帮忙，但你不能只靠它
+
+global memory 和 SM 之间有 cache，比如 L2。
+
+如果多个 thread 读到相同或相邻的数据，cache 可能帮你挡掉一部分 global memory 访问。
+
+但 cache 是硬件策略。
+
+你写 kernel 时没法精确指定：
+
+```text
+这块 A_tile 必须留给这个 block 用完
+这块 B_tile 必须按这个布局给这些 thread 读
+```
+
+shared memory 给了你一个可编程的片上暂存区。
+
+你可以让一个 block 合作把 `A_tile`、`B_tile` 搬进 shared memory，再让这个 block 里的 thread 反复使用它们。
+
+这就是 Tiling 的基础。
+
+## shared memory 是 block 内部的小仓库
+
+shared memory 在 SM 上。
+
+它比 global memory 小很多，但离计算更近。
+
+同一个 block 里的 thread 可以共享它：
+
+```cuda
+__shared__ float As[16][16];
+__shared__ float Bs[16][16];
+```
+
+一个 block 可以先把 global memory 里的小块搬进来：
+
+```text
+global A tile -> shared As
+global B tile -> shared Bs
+```
+
+然后 block 里的 thread 从 shared memory 里读：
+
+```text
+As[ty][k]
+Bs[k][tx]
+```
+
+这比每个 thread 都去 global memory 读同一批数据更划算。
+
+但 shared memory 也不是免费午餐。它有 bank，访问形状不好会出现 bank conflict。后面会单独讲。
+
+## register 是 thread 自己手里的数据
+
+register 离计算最近。
+
+每个 thread 都有自己的 register。
+
+比如：
+
+```cuda
+float sum = 0.0f;
+```
+
+这个 `sum` 通常会放在 register 里。
+
+在矩阵乘法里，一个 thread 会把 accumulator 放在 register：
+
+```cuda
+sum += a * b;
+```
+
+如果一个 thread 算多个 `C` 元素，它会有多个 accumulator：
+
+```cuda
+float c00, c01, c10, c11;
+```
+
+这就是 register tiling 的基础。
+
+register 很快，但数量有限。一个 thread 用太多 register，SM 上能同时跑的 warp 可能变少。后面说 occupancy，就是在讨论这类资源平衡。
+
+## FMA 和 Tensor Core 是计算端
+
+数据最后要进入计算单元。
+
+普通 CUDA core 做标量 FMA：
+
+```text
+c += a * b
+```
+
+FMA 是 fused multiply-add，也就是乘法和加法合成一条运算。
+
+Tensor Core 做小矩阵 MMA：
+
+```text
+D = A × B + C
+```
+
+MMA 是 matrix multiply-accumulate。
+
+你可以先这样区分：
+
+```text
+CUDA core: 一个个标量乘加
+Tensor Core: 一块块小矩阵乘加
+```
+
+后面的高级 GEMM pipeline，会围绕 Tensor Core 来组织数据。但在理解 Tiling、shared memory、register tiling 之前，先把普通 FMA 路径看懂就够了。
+
+## 一次 naive GEMM 的数据路径
+
+最朴素的 kernel 里，一个 thread 算一个 `C[i][j]`：
+
+```cuda
+float sum = 0.0f;
+
+for (int k = 0; k < K; ++k) {
+    sum += A[i * K + k] * B[k * N + j];
+}
+
+C[i * N + j] = sum;
+```
+
+每一轮 `k`：
+
+```text
+从 global memory 读 A[i][k]
+从 global memory 读 B[k][j]
+在 register 里的 sum 上做 FMA
+```
+
+最后：
+
+```text
+把 sum 写回 global memory 里的 C[i][j]
+```
+
+数据路径是：
+
+```text
+global A/B -> register -> FMA -> register sum -> global C
+```
+
+这个版本没有 shared memory。
+
+问题是，旁边很多 thread 会读到相同的 `A` 或 `B` 元素。它们各自去 global memory 拿，远距离搬运太多。
+
+## tiled GEMM 的数据路径
+
+Tiling 之后，路径多了一站：
+
+```text
+global A/B -> shared memory -> register -> FMA -> register accumulator -> global C
+```
+
+一个 block 先搬：
+
+```text
+A_tile -> shared As
+B_tile -> shared Bs
+```
+
+然后 thread 从 shared memory 读到 register：
+
+```text
+a = As[...]
+b = Bs[...]
+```
+
+再做：
+
+```text
+acc += a * b
+```
+
+这样同一块 `A_tile`、`B_tile` 可以被 block 内的多个 thread 反复使用。
+
+这就是后面几篇的主线：
+
+```text
+先减少 global memory 访问
+再让 global memory 访问更连续
+再让 shared memory 访问不冲突
+再让 register 里的数据多做几次 FMA
+```
+
+## 为什么文章后面总在说 tile
+
+完整矩阵太大，不能一次塞进 shared memory 或 register。
+
+所以 GEMM 会被切成很多小块：
+
+```text
+C_tile = A_tile × B_tile
+```
+
+不同层级会有不同 tile：
+
+```text
+CTA tile      一个 block 负责的 C 小块
+warp tile     一个 warp 负责的 C 小块
+thread tile   一个 thread 负责的 C 小块
+register tile thread register 里的 accumulator 小块
+```
+
+你看到 `tile` 时，先问一句：
+
+```text
+这是哪一层的 tile？
+```
+
+如果不问这一句，CUDA GEMM 文章会很容易读乱。
+
+## 先记住这条路径
+
+后面所有优化都可以放回这条路径：
+
+```text
+global memory / HBM
+  -> L2 cache
+  -> shared memory
+  -> register
+  -> FMA / Tensor Core
+```
+
+对应的优化问题是：
+
+| 路径 | 问题 |
+|---|---|
+| global -> shared | 能不能少读？能不能连续读？能不能一次多读？ |
+| shared -> register | 会不会 bank conflict？layout 是否顺手？ |
+| register -> compute | 一个值能不能多做几次 FMA？ |
+| compute pipeline | 搬运和计算能不能重叠？ |
+
+读后面的 CUDA 矩阵乘法系列时，不用先记住所有术语。
+
+先盯着这条数据路径。每个术语出现时，把它放回路径上的某一段，文章就不会散。

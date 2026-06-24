@@ -1,0 +1,324 @@
+import { Figure } from "@/components/mdx/article";
+
+export const metadata = {
+    title: 'CUDA 深入浅出（零）：先看懂 GPU 怎么执行一个 Kernel',
+    date: '2026-06-24',
+    address: 'csh0101.cc',
+    summary: '从 kernel launch、grid、block、warp、thread 和 SM 开始，先建立 CUDA 执行模型，再进入矩阵乘法优化。',
+    series: 'CUDA 深入浅出',
+    seriesOrder: 0,
+    tags: [ 'CUDA', 'GPU', 'Kernel' ]
+}
+
+# CUDA 深入浅出（零）：先看懂 GPU 怎么执行一个 Kernel
+
+看 CUDA 矩阵乘法之前，先把执行模型摆正。
+
+很多 CUDA 优化文章一上来就讲 shared memory、warp、coalesced load、occupancy。读者最容易卡在一个地方：这些词到底站在哪一层？
+
+CUDA 代码写起来像这样：
+
+```cuda
+matmul_kernel<<<gridDim, blockDim>>>(A, B, C, N);
+```
+
+这一行叫 kernel launch。
+
+CPU 发起一次 kernel launch，GPU 开始执行很多个 thread。你写的是一个 kernel 函数，但 GPU 会启动成千上万个 thread 去跑它。
+
+<Figure
+    src="/articles/cuda-deep-dive/kernel-execution-model.svg"
+    alt="CUDA kernel launch expands into grid, block, warp, thread and lane"
+    width={1280}
+    height={720}
+    caption="CUDA 的执行层级：CPU 发起 kernel launch，GPU 把 grid 里的 block 调度到 SM，再把 block 里的 thread 按 warp 执行。"
+/>
+
+## 一个 kernel 会被拆成很多 block
+
+`gridDim` 决定这次 kernel launch 里有多少个 block。
+
+`blockDim` 决定每个 block 里有多少个 thread。
+
+可以先记成：
+
+```text
+kernel launch
+  -> grid
+      -> block
+          -> thread
+```
+
+比如：
+
+```cuda
+dim3 blockDim(16, 16);
+dim3 gridDim((N + 15) / 16, (N + 15) / 16);
+
+matmul_kernel<<<gridDim, blockDim>>>(A, B, C, N);
+```
+
+这里每个 block 有：
+
+```text
+16 × 16 = 256 个 thread
+```
+
+如果 `N=1024`，`gridDim` 大概是：
+
+```text
+64 × 64 个 block
+```
+
+这些 block 会覆盖整个输出矩阵 `C`。
+
+一个常见映射是：
+
+```text
+一个 block 负责 C 的一个小块
+一个 thread 负责 C 里的一个元素
+```
+
+后面讲 Tiling 时，我们会把这个“小块”叫做 `C_tile`。
+
+## threadIdx 和 blockIdx 是坐标
+
+每个 thread 都会执行同一份 kernel 代码。
+
+它靠内置变量知道自己负责哪一块数据：
+
+```cuda
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+```
+
+这里：
+
+```text
+blockIdx.x / blockIdx.y   表示当前 block 在 grid 里的位置
+threadIdx.x / threadIdx.y 表示当前 thread 在 block 里的位置
+blockDim.x / blockDim.y   表示每个 block 的尺寸
+```
+
+所以 `row`、`col` 是这个 thread 在整个矩阵里的坐标。
+
+如果一个 thread 算一个输出元素，它会写：
+
+```cuda
+C[row * N + col] = sum;
+```
+
+这就是 CUDA 入门里最重要的第一步：每个 thread 先算出自己的全局坐标。
+
+## block 为什么重要
+
+block 不是单纯的编号分组。
+
+同一个 block 里的 thread 可以做两件关键的事：
+
+```text
+1. 共享 shared memory
+2. 使用 __syncthreads() 做同步
+```
+
+不同 block 之间不能直接用 `__syncthreads()` 同步，也不能直接共享同一块 shared memory。
+
+所以后面说：
+
+```text
+一个 block 把 A_tile 和 B_tile 搬进 shared memory
+```
+
+意思是这个 block 里的 thread 合作搬数据，搬完以后也只有这个 block 里的 thread 能直接读这份 shared memory。
+
+这就是为什么 Tiling 通常围绕 block 来设计。
+
+## SM 是执行 block 的地方
+
+GPU 里有很多个 SM，也就是 Streaming Multiprocessor。
+
+你可以先把 SM 理解成 GPU 里的计算车间。
+
+kernel launch 以后，GPU 会把 block 分配到不同 SM 上执行：
+
+```text
+grid 里的 block
+  -> 被调度到各个 SM
+      -> SM 执行 block 里的 thread
+```
+
+一个 SM 可以同时驻留多个 block。具体能放多少，取决于：
+
+```text
+每个 block 有多少 thread
+每个 block 用多少 shared memory
+每个 thread 用多少 register
+硬件限制
+```
+
+后面讲 occupancy 时，说的就是 SM 上能同时驻留多少 warp 或 block。
+
+现在先不用急着算 occupancy。先记住：block 会被调度到 SM 上，SM 才是执行这些 thread 的地方。
+
+## warp 才是硬件执行的基本节奏
+
+CUDA 代码里你写的是 thread。
+
+硬件执行时，SM 会把 thread 分成一组一组的 warp。
+
+一个 warp 通常是 32 个 thread。
+
+```text
+block
+  -> warp 0: thread 0..31
+  -> warp 1: thread 32..63
+  -> warp 2: thread 64..95
+  -> ...
+```
+
+warp 里的每个 thread 也叫 lane。
+
+比如：
+
+```text
+lane 0
+lane 1
+...
+lane 31
+```
+
+当一个 warp 执行一条指令时，32 个 lane 会一起走这条指令。
+
+这就是为什么后面会反复讲：
+
+```text
+一个 warp 里的相邻 thread 访问哪些地址？
+```
+
+global memory coalescing、shared memory bank conflict、Tensor Core MMA，都和 warp 的组织方式有关。
+
+## 一个 block 里的 256 个 thread 怎么变成 warp
+
+假设：
+
+```cuda
+dim3 blockDim(16, 16);
+```
+
+这个 block 有 `256` 个 thread。
+
+硬件会把它们分成：
+
+```text
+256 / 32 = 8 个 warp
+```
+
+二维 thread 坐标会被线性化。
+
+可以先近似理解成：
+
+```text
+threadIdx.x 变化最快
+threadIdx.y 变化慢一点
+```
+
+所以在很多 `16×16` block 里，一个 warp 可能覆盖两行：
+
+```text
+row 0, col 0..15
+row 1, col 0..15
+```
+
+不同 block shape 会影响 warp 内 thread 对应哪些矩阵坐标。
+
+这件事会影响 coalesced load。因为 coalescing 看的是一个 warp 里的地址，不是整个 block 的地址。
+
+## 分支也按 warp 付费
+
+warp 还有一个常见影响：分支。
+
+如果一个 warp 里的 32 个 thread 走同一个分支，执行很顺。
+
+如果一半 thread 走 `if`，另一半 thread 走 `else`，GPU 需要分批执行这些路径。
+
+比如：
+
+```cuda
+if (col < N) {
+    load_valid();
+} else {
+    load_zero();
+}
+```
+
+边界处理里常会出现这种情况。
+
+这不是说不能写分支。矩阵边界、mask、predicate 都需要分支或条件。只是你要知道：warp 内 thread 走不同路径时，执行效率会下降。
+
+## 把执行模型放到矩阵乘法里
+
+最朴素的矩阵乘法 kernel 可以这样想：
+
+```text
+grid 覆盖整个 C 矩阵
+block 覆盖 C 的一个小块
+thread 负责 C 的一个元素
+warp 是 thread 的硬件执行组
+SM 负责执行若干 block
+```
+
+对应到代码：
+
+```cuda
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+float sum = 0.0f;
+
+for (int k = 0; k < N; ++k) {
+    sum += A[row * N + k] * B[k * N + col];
+}
+
+C[row * N + col] = sum;
+```
+
+这段代码没有 shared memory，也没有 tiling。
+
+它只做了一件事：让每个 thread 找到自己负责的 `C[row][col]`，然后算一条点积。
+
+后面的所有优化，都会围绕这几个问题展开：
+
+```text
+一个 block 算多大的 C_tile？
+一个 warp 负责 C_tile 的哪一部分？
+threadIdx.x 是否对应连续的 col？
+同一个 block 里的 thread 能不能共用 A_tile 和 B_tile？
+shared memory 够不够放这些 tile？
+register 够不够放 accumulator？
+```
+
+## 先记住这张表
+
+| 名词 | 先这样理解 |
+|---|---|
+| kernel | GPU 上运行的函数 |
+| grid | 一次 kernel launch 里的全部 block |
+| block / CTA | 一组可以共享 shared memory、可以同步的 thread |
+| thread | 执行 kernel 代码的最小编程单位 |
+| warp | GPU 硬件调度的一组 thread，通常 32 个 |
+| lane | warp 里的一个 thread |
+| SM | 执行 block 和 warp 的硬件单元 |
+| shared memory | 同一个 block 内 thread 共享的片上内存 |
+| register | 每个 thread 私有、离计算最近的存储 |
+
+看 CUDA GEMM 时，先在脑子里放这张表。
+
+如果一篇文章说：
+
+```text
+一个 block 搬 A_tile 和 B_tile
+一个 warp 做 coalesced load
+一个 thread 做 register tiling
+```
+
+你就知道它分别站在哪一层。

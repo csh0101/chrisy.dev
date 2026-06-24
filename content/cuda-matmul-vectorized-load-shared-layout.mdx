@@ -1,3 +1,5 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'CUDA 深入浅出（五）：Vectorized Load 和 Shared Memory Layout',
     date: '2026-06-24',
@@ -27,6 +29,14 @@ shared memory transpose / layout optimization
 ```
 
 它们经常一起出现。vectorized load 负责把 global memory 的连续数据成组搬进来。shared memory layout 负责把这些数据摆成后续计算更爱读的形状。
+
+<Figure
+    src="/articles/cuda-deep-dive/vectorized-load-shared-layout.svg"
+    alt="Vectorized global load writes data into an optimized shared memory layout"
+    width={1280}
+    height={720}
+    caption="同一批数据有两种诉求：从 global memory 读取时要连续、对齐；写进 shared memory 后要方便后续 warp 和 register tile 读取。"
+/>
 
 ## 一个 thread 一次只搬一个 float 有点浪费
 

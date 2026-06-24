@@ -1,3 +1,5 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'CUDA 深入浅出（六）：现代 GEMM Pipeline 的最后一段路',
     date: '2026-06-24',
@@ -38,6 +40,14 @@ global memory
 让搬运、等待、计算尽量重叠。
 让更多硬件单元同时工作。
 ```
+
+<Figure
+    src="/articles/cuda-deep-dive/modern-gemm-pipeline.svg"
+    alt="Modern GEMM pipeline overlaps global to shared transfer, shared layout, register fragments and MMA"
+    width={1280}
+    height={720}
+    caption="现代 GEMM 的主线不是术语堆叠，而是把 global->shared 搬运、shared->register 读取、MMA 计算和下一轮预取错开重叠。"
+/>
 
 ## 7. warp-level tiling
 

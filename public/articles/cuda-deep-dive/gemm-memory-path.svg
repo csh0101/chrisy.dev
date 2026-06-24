@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">GEMM memory hierarchy data path</title>
+  <desc id="desc">Data flows from global memory through L2, shared memory, registers, and compute units.</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfcff}.title{font:700 34px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}.sub{font:500 17px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#73798a}.label{font:700 21px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}.small{font:600 14px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687084}.mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#3f4658}.box{fill:#fff;stroke:#dce3f2;stroke-width:2}.far{fill:#edf2ff;stroke:#84a8ec}.mid{fill:#eaf8f0;stroke:#82c89b}.near{fill:#fff6df;stroke:#ddb85d}.hot{fill:#fff0f5;stroke:#dd8bad}.arrow{fill:none;stroke:#7d879c;stroke-width:2.4;marker-end:url(#arrow)}.note{fill:#f7f9fc;stroke:#dce3f2;stroke-width:1.5}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#7d879c"/></marker>
+  </defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="72">GEMM 数据路径：数据越往右越靠近计算</text>
+  <text class="sub" x="64" y="105">CUDA GEMM 优化的主线，是让数据少走远路，并在近处被反复使用。</text>
+
+  <g transform="translate(70 185)">
+    <rect class="box far" width="210" height="120" rx="18"/>
+    <text class="label" x="34" y="48">Global Memory</text>
+    <text class="small" x="34" y="78">HBM / 显存</text>
+    <text class="small" x="34" y="101">容量大，离计算远</text>
+  </g>
+  <g transform="translate(335 185)">
+    <rect class="box far" width="170" height="120" rx="18"/>
+    <text class="label" x="44" y="48">L2 Cache</text>
+    <text class="small" x="34" y="78">硬件缓存</text>
+    <text class="small" x="34" y="101">能帮忙但不可控</text>
+  </g>
+  <g transform="translate(560 185)">
+    <rect class="box mid" width="210" height="120" rx="18"/>
+    <text class="label" x="33" y="48">Shared Memory</text>
+    <text class="small" x="33" y="78">block 内共享</text>
+    <text class="small" x="33" y="101">tile 复用发生在这里</text>
+  </g>
+  <g transform="translate(825 185)">
+    <rect class="box near" width="170" height="120" rx="18"/>
+    <text class="label" x="45" y="48">Register</text>
+    <text class="small" x="36" y="78">thread 私有</text>
+    <text class="small" x="36" y="101">存 accumulator</text>
+  </g>
+  <g transform="translate(1050 185)">
+    <rect class="box hot" width="170" height="120" rx="18"/>
+    <text class="label" x="42" y="48">Compute</text>
+    <text class="small" x="34" y="78">FMA / Tensor Core</text>
+    <text class="small" x="34" y="101">真正做乘加</text>
+  </g>
+  <line class="arrow" x1="280" y1="245" x2="328" y2="245"/>
+  <line class="arrow" x1="505" y1="245" x2="552" y2="245"/>
+  <line class="arrow" x1="770" y1="245" x2="817" y2="245"/>
+  <line class="arrow" x1="995" y1="245" x2="1042" y2="245"/>
+
+  <rect class="note" x="125" y="395" width="440" height="170" rx="20"/>
+  <text class="label" x="160" y="435">Naive GEMM</text>
+  <text class="mono" x="160" y="470">global A/B -> register</text>
+  <text class="mono" x="160" y="500">register -> FMA</text>
+  <text class="mono" x="160" y="530">register sum -> global C</text>
+
+  <rect class="note" x="715" y="395" width="440" height="170" rx="20"/>
+  <text class="label" x="750" y="435">Tiled GEMM</text>
+  <text class="mono" x="750" y="470">global A/B -> shared tile</text>
+  <text class="mono" x="750" y="500">shared tile -> register</text>
+  <text class="mono" x="750" y="530">register accumulator -> global C</text>
+  <line class="arrow" x1="565" y1="480" x2="706" y2="480"/>
+  <text class="small" x="598" y="455">把重复读取移到近处</text>
+</svg>

@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">CUDA kernel execution model</title>
+  <desc id="desc">A CUDA kernel launch expands into a grid, blocks, warps, threads, and lanes scheduled on SMs.</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfcff}
+      .title{font:700 34px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}
+      .sub{font:500 17px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#73798a}
+      .label{font:700 20px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}
+      .small{font:600 14px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687084}
+      .mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#3f4658}
+      .box{fill:#fff;stroke:#dce3f2;stroke-width:2}
+      .blue{fill:#eaf2ff;stroke:#81a9ee}
+      .green{fill:#eaf8f0;stroke:#82c89b}
+      .yellow{fill:#fff6df;stroke:#ddb85d}
+      .pink{fill:#fff0f5;stroke:#dd8bad}
+      .arrow{fill:none;stroke:#7d879c;stroke-width:2.4;marker-end:url(#arrow)}
+      .thin{stroke:#cdd6e6;stroke-width:1.5}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7d879c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="72">CUDA 执行模型：从 launch 到 lane</text>
+  <text class="sub" x="64" y="105">先知道每个词站在哪一层，后面的 tiling、coalescing、MMA 才不会悬空。</text>
+
+  <rect class="box blue" x="70" y="160" width="210" height="96" rx="16"/>
+  <text class="label" x="102" y="200">Kernel Launch</text>
+  <text class="mono" x="102" y="230">&lt;&lt;&lt;grid, block&gt;&gt;&gt;</text>
+
+  <rect class="box" x="365" y="130" width="850" height="430" rx="22"/>
+  <text class="label" x="397" y="172">Grid</text>
+  <text class="small" x="397" y="199">一次 launch 里的全部 block</text>
+  <line class="arrow" x1="280" y1="208" x2="356" y2="208"/>
+
+  <g transform="translate(405 230)">
+    <rect class="box green" width="220" height="140" rx="16"/>
+    <text class="label" x="28" y="40">Block / CTA</text>
+    <text class="small" x="28" y="68">共享 shared memory</text>
+    <text class="small" x="28" y="92">可用 __syncthreads()</text>
+    <circle cx="38" cy="116" r="8" fill="#57b985"/>
+    <circle cx="66" cy="116" r="8" fill="#57b985"/>
+    <circle cx="94" cy="116" r="8" fill="#57b985"/>
+    <circle cx="122" cy="116" r="8" fill="#57b985"/>
+    <circle cx="150" cy="116" r="8" fill="#57b985"/>
+  </g>
+
+  <g transform="translate(670 230)">
+    <rect class="box green" width="220" height="140" rx="16"/>
+    <text class="label" x="28" y="40">Block / CTA</text>
+    <text class="small" x="28" y="68">调度到某个 SM</text>
+    <text class="small" x="28" y="92">内部再拆成 warp</text>
+    <circle cx="38" cy="116" r="8" fill="#57b985"/>
+    <circle cx="66" cy="116" r="8" fill="#57b985"/>
+    <circle cx="94" cy="116" r="8" fill="#57b985"/>
+    <circle cx="122" cy="116" r="8" fill="#57b985"/>
+    <circle cx="150" cy="116" r="8" fill="#57b985"/>
+  </g>
+
+  <g transform="translate(935 230)">
+    <rect class="box green" width="220" height="140" rx="16"/>
+    <text class="label" x="28" y="40">Block / CTA</text>
+    <text class="small" x="28" y="68">grid 里的独立工作块</text>
+    <text class="small" x="28" y="92">block 间不能同步</text>
+    <circle cx="38" cy="116" r="8" fill="#57b985"/>
+    <circle cx="66" cy="116" r="8" fill="#57b985"/>
+    <circle cx="94" cy="116" r="8" fill="#57b985"/>
+    <circle cx="122" cy="116" r="8" fill="#57b985"/>
+    <circle cx="150" cy="116" r="8" fill="#57b985"/>
+  </g>
+
+  <rect class="box yellow" x="405" y="415" width="330" height="92" rx="16"/>
+  <text class="label" x="433" y="454">Warp</text>
+  <text class="small" x="433" y="482">硬件执行节奏，通常 32 个 thread</text>
+  <line class="arrow" x1="515" y1="370" x2="515" y2="407"/>
+
+  <rect class="box pink" x="785" y="415" width="330" height="92" rx="16"/>
+  <text class="label" x="813" y="454">Thread / Lane</text>
+  <text class="small" x="813" y="482">编程写 thread，warp 内叫 lane</text>
+  <line class="arrow" x1="735" y1="461" x2="776" y2="461"/>
+
+  <g transform="translate(420 535)">
+    <text class="small" x="0" y="0">一个 block 里的 thread 会被线性拆成多个 warp：</text>
+    <rect x="0" y="25" width="720" height="42" rx="10" fill="#f5f7fb" stroke="#dce3f2"/>
+    <text class="mono" x="22" y="52">thread 0..31 -> warp 0    thread 32..63 -> warp 1    ...</text>
+  </g>
+
+  <rect class="box" x="70" y="430" width="230" height="118" rx="18"/>
+  <text class="label" x="102" y="470">SM</text>
+  <text class="small" x="102" y="498">Streaming Multiprocessor</text>
+  <text class="small" x="102" y="524">真正执行 block/warp</text>
+  <line class="arrow" x1="365" y1="430" x2="305" y2="490"/>
+</svg>

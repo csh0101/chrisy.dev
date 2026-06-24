@@ -1,3 +1,5 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'CUDA 深入浅出（三）：什么是 Coalesced Load',
     date: '2026-06-24',
@@ -24,6 +26,14 @@ CUDA 里这个概念叫 coalesced memory access。放在 load 上，就是 coale
 ```
 
 这句话听起来像常识，但它直接影响 GPU 能不能把多次 load 合并成更少的 memory transaction。
+
+<Figure
+    src="/articles/cuda-deep-dive/coalesced-load.svg"
+    alt="Comparison between coalesced global load and strided global load"
+    width={1280}
+    height={720}
+    caption="Coalesced load 看的是一个 warp 里的地址形状：相邻 lane 访问相邻地址，硬件才更容易用少量 transaction 搬回数据。"
+/>
 
 ## GPU 不是一个 thread 一个 thread 去读内存
 

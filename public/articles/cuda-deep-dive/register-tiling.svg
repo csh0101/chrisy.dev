@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Register tiling</title>
+  <desc id="desc">A thread keeps multiple accumulators in registers and reuses shared memory values for several outputs.</desc>
+  <defs>
+    <style>
+      .bg{fill:#fbfcff}.title{font:700 34px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}.sub{font:500 17px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#73798a}.label{font:700 21px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#202433}.small{font:600 14px ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;fill:#687084}.mono{font:600 15px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;fill:#3f4658}.panel{fill:#fff;stroke:#dce3f2;stroke-width:2}.shared{fill:#eaf8f0;stroke:#7ec79a}.reg{fill:#fff6df;stroke:#ddb85d}.acc{fill:#fff0f5;stroke:#dd8bad}.arrow{fill:none;stroke:#7d879c;stroke-width:2.4;marker-end:url(#arrow)}.reuse{fill:none;stroke:#e4844f;stroke-width:3;stroke-dasharray:8 8;marker-end:url(#orange)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#7d879c"/></marker>
+    <marker id="orange" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#e4844f"/></marker>
+  </defs>
+  <rect class="bg" width="1280" height="720"/>
+  <text class="title" x="64" y="72">Register Tiling：一个 thread 不只算一个 C</text>
+  <text class="sub" x="64" y="105">从 shared memory 读出的 a、b，如果只用一次就丢掉，shared memory 也会变成瓶颈。</text>
+
+  <rect class="panel shared" x="90" y="175" width="300" height="330" rx="22"/>
+  <text class="label" x="125" y="218">Shared Memory</text>
+  <text class="small" x="125" y="246">A_frag 和 B_frag 被 thread 读出</text>
+  <rect x="130" y="300" width="80" height="80" rx="10" fill="#c7efd4" stroke="#57b985"/>
+  <text class="mono" x="154" y="347">a0</text>
+  <rect x="250" y="300" width="80" height="80" rx="10" fill="#c7efd4" stroke="#57b985"/>
+  <text class="mono" x="274" y="347">b0</text>
+
+  <rect class="panel reg" x="500" y="175" width="280" height="330" rx="22"/>
+  <text class="label" x="545" y="218">Thread Registers</text>
+  <text class="small" x="545" y="246">a、b 先放进寄存器</text>
+  <rect x="555" y="300" width="70" height="70" rx="10" fill="#ffe8a3" stroke="#d6a63f"/>
+  <text class="mono" x="574" y="342">a0</text>
+  <rect x="655" y="300" width="70" height="70" rx="10" fill="#ffe8a3" stroke="#d6a63f"/>
+  <text class="mono" x="674" y="342">b0</text>
+
+  <rect class="panel acc" x="890" y="155" width="300" height="370" rx="22"/>
+  <text class="label" x="935" y="198">2×2 Accumulators</text>
+  <text class="small" x="935" y="226">一个 thread 维护多个 C</text>
+  <g transform="translate(955 285)">
+    <rect x="0" y="0" width="82" height="82" rx="10" fill="#ffd8e6" stroke="#dd8bad"/><text class="mono" x="24" y="48">c00</text>
+    <rect x="98" y="0" width="82" height="82" rx="10" fill="#ffd8e6" stroke="#dd8bad"/><text class="mono" x="122" y="48">c01</text>
+    <rect x="0" y="98" width="82" height="82" rx="10" fill="#ffd8e6" stroke="#dd8bad"/><text class="mono" x="24" y="146">c10</text>
+    <rect x="98" y="98" width="82" height="82" rx="10" fill="#ffd8e6" stroke="#dd8bad"/><text class="mono" x="122" y="146">c11</text>
+  </g>
+  <line class="arrow" x1="390" y1="340" x2="492" y2="340"/>
+  <line class="arrow" x1="780" y1="340" x2="882" y2="340"/>
+  <path class="reuse" d="M625 385 C760 520, 960 520, 998 472"/>
+  <path class="reuse" d="M690 385 C830 555, 1075 555, 1090 472"/>
+  <text class="mono" x="210" y="585">读一次 shared -> 在 register 里更新多个 accumulator</text>
+  <text class="small" x="210" y="618">代价是每个 thread 用更多 register，可能影响 occupancy。</text>
+</svg>

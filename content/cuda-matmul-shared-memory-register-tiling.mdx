@@ -1,3 +1,5 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'CUDA 深入浅出（四）：怎么高效访问 Shared Memory',
     date: '2026-06-24',
@@ -32,6 +34,14 @@ register tiling
 ```
 
 前者讲 shared memory 的访问形状。后者讲一个线程读到数据以后，怎么在 register 里多用几次。
+
+<Figure
+    src="/articles/cuda-deep-dive/shared-memory-bank-conflict.svg"
+    alt="Shared memory bank conflict versus conflict-free bank access"
+    width={1280}
+    height={720}
+    caption="Shared memory 不是一个无限并行的大门。warp 里的访问如果集中打到同一个 bank，就会被拆成多轮处理。"
+/>
 
 ## shared memory 也有访问结构
 
@@ -250,6 +260,14 @@ shared memory 快，但没有 register 快。
 ## register tiling 在干什么
 
 register tiling 的想法是：让一个 thread 不只算一个 `C` 元素，而是算一小块 `C`。
+
+<Figure
+    src="/articles/cuda-deep-dive/register-tiling.svg"
+    alt="A thread keeps a 2 by 2 accumulator tile in registers"
+    width={1280}
+    height={720}
+    caption="Register tiling 让一个 thread 在寄存器里维护多个 accumulator，从 shared memory 读到一次数据后多更新几个 C 元素。"
+/>
 
 比如一个 thread 算 `2×2` 个输出：
 

@@ -1,3 +1,5 @@
+import { Figure } from "@/components/mdx/article";
+
 export const metadata = {
     title: 'CUDA 深入浅出（一）：矩阵乘法为什么要分块',
     date: '2026-06-24',
@@ -19,6 +21,14 @@ export const metadata = {
 如果你刚开始看 CUDA，很容易在这里卡住。`T²` 是什么，`T³` 又从哪来，一个元素为什么会参与 `T` 次 multiply-add，最后怎么就得到 data reuse factor 等于 `T`？
 
 我们慢一点，从一个小块矩阵乘法开始。
+
+<Figure
+    src="/articles/cuda-deep-dive/tiling-data-reuse.svg"
+    alt="A tile and B tile are loaded once and reused to produce a C tile"
+    width={1280}
+    height={720}
+    caption="Tiling 的直觉：A_tile 和 B_tile 从 global memory 搬进来一次，然后在 shared memory 里被同一个 block 反复使用。"
+/>
 
 ## 先看 T=4
 
