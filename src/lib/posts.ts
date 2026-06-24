@@ -7,6 +7,8 @@ const PostMetadataSchema = z.object({
     date: z.string({ error: 'Article date can not be null' }),
     summary: z.string().optional(),
     pinned: z.boolean().optional(),
+    series: z.string().optional(),
+    seriesOrder: z.number().optional(),
     tags: z.array(z.string()).optional(),
     address: z.string().optional()
 }).loose()
@@ -72,7 +74,15 @@ export class PostsContext {
         }))).filter((p): p is Post => p != null)
         // Sort in descending order by date
         const sorted = metadata.sort((a: Post, b: Post) => {
-            return new Date(b.metadata.date).getTime() - new Date(a.metadata.date).getTime()
+            const dateDiff = new Date(b.metadata.date).getTime() - new Date(a.metadata.date).getTime()
+            if (dateDiff !== 0) return dateDiff
+
+            const sameSeries = a.metadata.series && a.metadata.series === b.metadata.series
+            if (sameSeries && a.metadata.seriesOrder != null && b.metadata.seriesOrder != null) {
+                return b.metadata.seriesOrder - a.metadata.seriesOrder
+            }
+
+            return a.slug.localeCompare(b.slug)
         })
         return limit > 0 ? sorted.slice(0, limit) : sorted
     }
