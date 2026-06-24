@@ -1,0 +1,424 @@
+export const metadata = {
+    title: 'CUDA 深入浅出（六）：现代 GEMM Pipeline 的最后一段路',
+    date: '2026-06-24',
+    address: 'csh0101.cc',
+    summary: '从 warp-level tiling 到 Tensor Core MMA、TMA、WGMMA、persistent kernel 和 software pipelining，看现代 CUDA GEMM 怎么把搬运和计算叠起来。',
+    tags: [ 'CUDA', 'GPU', 'Tensor Core' ]
+}
+
+# CUDA 深入浅出（六）：现代 GEMM Pipeline 的最后一段路
+
+前面几篇已经把 CUDA GEMM 的基本路径走了一遍：
+
+```text
+global memory
+  -> coalesced / vectorized load
+  -> shared memory
+  -> register tiling
+  -> FMA
+```
+
+这条路能写出一个不错的 CUDA kernel。
+
+但现代高性能 GEMM 不会停在这里。它还会继续往下压：
+
+```text
+7. warp-level tiling
+8. Tensor Core MMA
+9. TMA 异步搬运 global -> shared
+10. Warp Group MMA
+11. persistent kernel / software pipelining
+```
+
+这些词看起来像五个独立概念，其实它们在解决同一个问题：
+
+```text
+让搬运、等待、计算尽量重叠。
+让更多硬件单元同时工作。
+```
+
+## 7. warp-level tiling
+
+前面讲 register tiling 时，我们说一个 thread 可以不只算一个 `C` 元素，而是算一个小块。
+
+warp-level tiling 再往上一层。
+
+一个 block 通常会负责一个较大的 `C_tile`。这个 `C_tile` 不会直接丢给所有 thread 乱算。kernel 会把它拆成多个 warp tile：
+
+```text
+block tile: 128 x 128
+
+warp 0 -> 64 x 32
+warp 1 -> 64 x 32
+warp 2 -> 64 x 32
+warp 3 -> 64 x 32
+```
+
+这只是例子，不同 kernel 会选不同形状。
+
+warp-level tiling 关心几个问题：
+
+```text
+一个 warp 负责 C 的哪一块？
+这个 warp 需要 A 的哪几行？
+这个 warp 需要 B 的哪几列？
+warp 里的 32 个 lane 怎么分摊这些 register fragment？
+```
+
+没有 Tensor Core 时，warp-level tiling 主要服务于 CUDA core 上的 FMA。
+
+进入 Tensor Core 以后，warp-level tiling 变得更重要。因为 Tensor Core MMA 不是单个 thread 的指令语义，而是一个 warp 共同执行矩阵乘加。
+
+你可以把 tiling 层次记成这样：
+
+```text
+CTA tile      -> 一个 thread block 负责的大块 C
+warp tile     -> 一个 warp 负责的中块 C
+thread tile   -> 一个 thread 负责的小块 C
+register tile -> thread register 里的 accumulator
+```
+
+每往下一层，数据离计算单元更近，粒度也更小。
+
+## 8. Tensor Core MMA
+
+普通 CUDA core 做的是标量 FMA：
+
+```text
+c += a * b
+```
+
+Tensor Core 做的是小矩阵 MMA：
+
+```text
+D = A x B + C
+```
+
+这里的 `A`、`B`、`C`、`D` 不是完整大矩阵，而是硬件支持的固定小形状 fragment。
+
+比如你可能会看到类似这样的概念：
+
+```text
+m16n8k16
+m16n16k16
+```
+
+意思是一次 MMA 指令处理一个固定大小的小矩阵乘加。具体形状取决于架构、数据类型和指令形式。
+
+Tensor Core 的关键变化是：
+
+```text
+warp 不再只是 32 个 thread 各算各的标量。
+warp 会一起喂给 Tensor Core 一组矩阵 fragment。
+```
+
+每个 lane 持有 fragment 的一部分。你不能把它想成 thread 0 拿完整的 A，thread 1 拿完整的 B。fragment 分散在整个 warp 的 register 里。
+
+调用 MMA 时，整个 warp 协作完成一块矩阵乘加。
+
+这也是为什么 Tensor Core kernel 的代码看起来比普通 FMA kernel 更难读。你看到的是：
+
+```text
+load matrix fragment
+mma
+store accumulator fragment
+```
+
+而不是显式写出每一个 `a*b+c`。
+
+## MMA 改变了计算阶段的中心
+
+前面几篇里，计算核心是：
+
+```cuda
+acc[i][j] += a[i] * b[j];
+```
+
+Tensor Core 版本里，计算核心变成：
+
+```text
+mma(fragment_a, fragment_b, fragment_acc)
+```
+
+这会倒逼前面的数据布局变化。
+
+你不能只问：
+
+```text
+shared memory 有没有 bank conflict？
+```
+
+还要问：
+
+```text
+shared memory 里的 layout 能不能喂给 MMA？
+lane 持有的 register fragment 是否符合 MMA 指令要求？
+warp tile 的形状是否匹配 Tensor Core 指令形状？
+```
+
+所以现代 GEMM 里，layout 不是审美问题。layout 是为了让硬件指令吃到它想吃的数据形状。
+
+## 9. TMA 异步搬运 global -> shared
+
+前面讲 vectorized load 时，一个 thread 或一个 warp 会参与 global memory 到 shared memory 的搬运。
+
+Hopper 以后，TMA 把这个动作推进了一步。
+
+TMA 是 Tensor Memory Accelerator。它负责把 global memory 里的多维 tensor tile 异步搬到 shared memory。
+
+普通 thread load 要做很多地址计算：
+
+```text
+row, col
+leading dimension
+边界
+tile offset
+shared memory offset
+```
+
+TMA 使用 tensor map 描述多维数据布局，让硬件处理大块、多维、异步搬运。
+
+你可以把它理解成：
+
+```text
+以前：很多 thread 自己算地址，自己搬。
+TMA：kernel 发起一个 bulk tensor copy，让专门硬件搬。
+```
+
+TMA 的收益不只是“搬得快”。更重要的是它让搬运可以和计算重叠。
+
+一个 CTA 或 cluster 可以发起下一块 tile 的 TMA copy，然后继续计算当前 tile。等计算需要下一块数据时，再通过 barrier 等待那次异步搬运完成。
+
+这就把 GEMM 的节奏从：
+
+```text
+搬 A/B
+等搬完
+计算
+搬下一块
+等搬完
+计算
+```
+
+推进成：
+
+```text
+计算第 k 块时，搬第 k+1 块
+```
+
+## TMA 为什么需要 barrier
+
+异步搬运带来一个问题：你发出 copy 指令以后，数据不是立刻可用。
+
+所以 kernel 需要同步机制：
+
+```text
+producer 发起 TMA copy
+barrier 记录 copy 完成状态
+consumer 等 barrier
+consumer 读取 shared memory
+```
+
+如果没有这个等待，compute warp 可能会读到还没写完的 shared memory。
+
+这也是异步 GEMM 代码复杂的地方。你不只管理数据，还要管理数据什么时候可见。
+
+## 10. Warp Group MMA
+
+普通 MMA 通常以一个 warp 为单位。
+
+Hopper 引入 WGMMA，也就是 warp group MMA。
+
+warp group 通常由 4 个 warp 组成，也就是 128 个 thread。WGMMA 让这组 warp 协作执行更大粒度的矩阵乘加。
+
+可以把它理解成：
+
+```text
+MMA:   一个 warp 喂 Tensor Core
+WGMMA: 一组 warp 一起喂 Tensor Core
+```
+
+WGMMA 的接口和数据组织更复杂。它会涉及 shared memory descriptor、matrix layout、异步 commit / wait 这样的机制。
+
+但从 GEMM 设计角度看，它的目标很直接：
+
+```text
+让更大的 warp group 协作处理更大的 tile。
+减少单个 warp 粒度下的调度和数据组织开销。
+提高 Tensor Core 吞吐。
+```
+
+这时，warp-level tiling 也升级了。
+
+你不再只问一个 warp 算哪块。你要问：
+
+```text
+一个 warp group 算哪块？
+4 个 warp 内部分别承担什么角色？
+A/B 在 shared memory 里如何摆放？
+WGMMA 指令需要哪些 descriptor？
+accumulator fragment 怎么分布？
+```
+
+现代 Hopper GEMM 的很多复杂度都来自这里。
+
+## WGMMA 是异步的
+
+WGMMA 名字里常见 `async`。
+
+这意味着发出 WGMMA 之后，指令提交和结果可用之间有时间差。kernel 需要用 commit / wait 之类的机制管理它。
+
+这和 TMA 有点像：
+
+```text
+TMA 异步搬数据
+WGMMA 异步做矩阵乘加
+```
+
+两者叠起来以后，kernel 里就会同时存在：
+
+```text
+数据搬运的 pipeline
+矩阵计算的 pipeline
+barrier / wait / commit
+```
+
+你开始看到一个真正的 GPU 流水线，而不是一个简单 for 循环。
+
+## 11. persistent kernel
+
+普通 kernel launch 里，每个 block 算一个或几个固定 tile。grid 里有多少 tile，就启动多少 CTA。
+
+persistent kernel 换一种方式。
+
+它让一批 CTA 常驻 SM 上，不断从 work queue 里拿 tile 来算。
+
+伪代码像这样：
+
+```cuda
+while (true) {
+    tile = get_next_tile();
+    if (!tile.valid) break;
+
+    compute_tile(tile);
+}
+```
+
+这样做的目标是让 SM 一直有活干。
+
+在某些场景里，tile 数量、tile 形状、batch 分布、专家模型路由都会导致工作不均匀。普通 grid 可能出现一些 SM 早早干完，另一些 SM 还在忙。
+
+persistent kernel 让 CTA 像 worker 一样持续领取任务，改善负载均衡，也减少反复调度带来的开销。
+
+它的代价是调度逻辑变复杂。你要管理 work queue、tile id、边界、同步，有时还要处理不同 tile 的数据形状差异。
+
+## software pipelining
+
+software pipelining 是现代 GEMM 里的另一条主线。
+
+它的目标是把这些阶段叠起来：
+
+```text
+load tile k+1
+compute tile k
+store tile k-1
+```
+
+更具体一点，一个多 stage GEMM 可能同时做这些事：
+
+```text
+TMA 正在搬下一块 A/B 到 shared memory
+WGMMA 正在消费当前 shared memory tile
+register accumulator 正在积累结果
+另一个 stage 的 shared memory buffer 等待复用
+```
+
+这就是 double buffering 或 multi-stage buffering 的意义。
+
+如果只有一个 shared memory buffer，kernel 必须：
+
+```text
+搬完 -> 算完 -> 覆盖 buffer -> 再搬
+```
+
+如果有两个或更多 buffer，kernel 可以：
+
+```text
+buffer 0 用来计算
+buffer 1 用来搬下一块
+下一轮交换角色
+```
+
+搬运延迟被计算覆盖掉，Tensor Core 不容易饿，memory pipeline 也不容易空。
+
+## 这几件事怎么连起来
+
+把这五个高级主题放回一条 GEMM pipeline：
+
+```text
+persistent CTA 领取一个 C tile
+
+TMA:
+  异步把 A/B tile 从 global memory 搬到 shared memory
+
+shared memory layout:
+  数据按 WGMMA 需要的 layout 摆好
+
+warp group:
+  4 个 warp 组成一个计算单元
+
+WGMMA:
+  消费 shared memory descriptor
+  执行异步矩阵乘加
+
+software pipeline:
+  当前 tile 在算
+  下一块 tile 在搬
+  上一轮 accumulator 准备写回
+```
+
+这时的 GEMM kernel 已经不是一个“矩阵乘法程序”。它更像一个小型调度系统。
+
+它要同时调度：
+
+```text
+global memory bandwidth
+shared memory bank
+register file
+Tensor Core
+warp scheduler
+barrier
+work queue
+```
+
+每个环节都要尽量少等。
+
+## 从手写 kernel 到 CUTLASS
+
+读到这里，手写一个完整 Hopper GEMM kernel 已经不太适合作为入门练习。
+
+你可以继续读 CUTLASS、CuTe、Triton 或相关 kernel，把它们当成工程样本。
+
+它们的代码会比前几篇里的示例复杂很多，但主线没有变：
+
+```text
+1. 把大矩阵切成 CTA tile
+2. 把 CTA tile 切成 warp / warp group tile
+3. 把 global memory tile 异步搬到 shared memory
+4. 把 shared memory layout 调成 MMA 喜欢的形状
+5. 用 Tensor Core 做 MMA
+6. 用 software pipeline 重叠搬运和计算
+7. 用 persistent kernel 让 SM 持续有活干
+```
+
+这些名字听起来很高级，但它们都在回答同一个朴素问题：
+
+```text
+数据什么时候到？
+谁来算？
+硬件有没有在等？
+```
+
+CUDA GEMM 优化从分块开始，最后会回到流水线。
+
+前面的分块、coalescing、shared memory、register tiling，都在为这条流水线打地基。Tensor Core、TMA、WGMMA、persistent kernel 只是把这条路铺得更宽，让更多硬件单元同时跑起来。
