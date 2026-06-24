@@ -1,4 +1,5 @@
 import { Figure } from "@/components/mdx/article";
+import Table from "@/components/mdx/table";
 
 export const metadata = {
     title: 'CUDA 深入浅出（零）：先看懂 GPU 怎么执行一个 Kernel',
@@ -299,17 +300,23 @@ register 够不够放 accumulator？
 
 ## 先记住这张表
 
-| 名词 | 先这样理解 |
-|---|---|
-| kernel | GPU 上运行的函数 |
-| grid | 一次 kernel launch 里的全部 block |
-| block / CTA | 一组可以共享 shared memory、可以同步的 thread |
-| thread | 执行 kernel 代码的最小编程单位 |
-| warp | GPU 硬件调度的一组 thread，通常 32 个 |
-| lane | warp 里的一个 thread |
-| SM | 执行 block 和 warp 的硬件单元 |
-| shared memory | 同一个 block 内 thread 共享的片上内存 |
-| register | 每个 thread 私有、离计算最近的存储 |
+<Table
+    data={[
+        { term: "kernel", meaning: "GPU 上运行的函数" },
+        { term: "grid", meaning: "一次 kernel launch 里的全部 block" },
+        { term: "block / CTA", meaning: "一组可以共享 shared memory、可以同步的 thread" },
+        { term: "thread", meaning: "执行 kernel 代码的最小编程单位" },
+        { term: "warp", meaning: "GPU 硬件调度的一组 thread，通常 32 个" },
+        { term: "lane", meaning: "warp 里的一个 thread" },
+        { term: "SM", meaning: "执行 block 和 warp 的硬件单元" },
+        { term: "shared memory", meaning: "同一个 block 内 thread 共享的片上内存" },
+        { term: "register", meaning: "每个 thread 私有、离计算最近的存储" }
+    ]}
+    columns={[
+        { key: "term", title: "名词", width: "180px" },
+        { key: "meaning", title: "先这样理解" }
+    ]}
+/>
 
 看 CUDA GEMM 时，先在脑子里放这张表。
 

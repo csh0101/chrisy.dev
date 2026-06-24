@@ -1,4 +1,5 @@
 import { Figure } from "@/components/mdx/article";
+import Table from "@/components/mdx/table";
 
 export const metadata = {
     title: 'CUDA 深入浅出（零点五）：GPU 内存层级和 GEMM 数据路径',
@@ -394,12 +395,18 @@ global memory / HBM
 
 对应的优化问题是：
 
-| 路径 | 问题 |
-|---|---|
-| global -> shared | 能不能少读？能不能连续读？能不能一次多读？ |
-| shared -> register | 会不会 bank conflict？layout 是否顺手？ |
-| register -> compute | 一个值能不能多做几次 FMA？ |
-| compute pipeline | 搬运和计算能不能重叠？ |
+<Table
+    data={[
+        { path: "global -> shared", question: "能不能少读？能不能连续读？能不能一次多读？" },
+        { path: "shared -> register", question: "会不会 bank conflict？layout 是否顺手？" },
+        { path: "register -> compute", question: "一个值能不能多做几次 FMA？" },
+        { path: "compute pipeline", question: "搬运和计算能不能重叠？" }
+    ]}
+    columns={[
+        { key: "path", title: "路径", width: "220px" },
+        { key: "question", title: "问题" }
+    ]}
+/>
 
 读后面的 CUDA 矩阵乘法系列时，不用先记住所有术语。
 
