@@ -26,7 +26,7 @@ export const metadata = {
 - 集群内有 IB 数据面网络，带宽和延迟条件明显好于回源链路。
 - 每台 GPU 训练节点上都有一块大容量 NVMe，可以用于缓存。
 - 集群里已经存在一套并行文件系统，存量裸机任务也依赖它。
-- 业务既有 Kubernetes Pod + PVC 方式，也有直接在机器上启动训练进程的方式。
+- 业务既有 Kubernetes Pod + PVC 方式，也有 Pod 通过 hostPath 复用宿主机挂载目录的方式，还有直接在机器上启动训练进程的方式。
 
 这决定了方案的方向：不要让每个训练任务都在运行时直接打远端对象存储，而是把训练数据提前前移到边缘集群内部，让训练阶段尽量从集群内高速缓存读取。
 
@@ -44,7 +44,7 @@ export const metadata = {
         { item: '回源链路', value: '10Gbps 级专线，近似独占' },
         { item: '集群内数据面', value: 'IB 网络' },
         { item: 'Client cache-dir', value: '存量并行文件系统挂载路径' },
-        { item: '业务使用方式', value: 'Kubernetes Pod + PVC；裸机 / 宿主机直接训练' },
+        { item: '业务使用方式', value: 'Kubernetes Pod + PVC；Pod + hostPath；裸机 / 宿主机直接训练' },
         { item: 'Client 模式', value: '--cache-group=<name> + --no-sharing' },
     ]}
     columns={[
@@ -69,7 +69,7 @@ export const metadata = {
 - 远端对象存储：训练数据的原始来源。
 - JuiceFS 企业版 Cache Group：部署在 GPU 训练节点上，使用每台节点的 NVMe 组成分布式缓存池。
 - JuiceFS Client：运行在训练节点侧，使用 `--cache-group=<name>` 接入缓存组，并通过 `--no-sharing` 作为访问端，不参与缓存数据构建。
-- 训练任务：既可以通过 Kubernetes Pod + PVC 访问，也可以在机器上直接读取 JuiceFS 挂载点。
+- 训练任务：既可以通过 Kubernetes Pod + PVC 访问，也可以通过 hostPath 复用宿主机挂载目录，还可以在机器上直接读取 JuiceFS 挂载点。
 
 <Figure
     src="/articles/juicefs-cache-group-training-architecture/cache-group-architecture.svg"
@@ -87,15 +87,46 @@ export const metadata = {
 
 第二，缓存容量可以随着训练节点规模自然扩展。每个节点贡献一块 NVMe，整体形成百 TB 级缓存池，适合承载训练数据集的热点部分。
 
-## 两种使用方式
+## 三种使用方式
 
-实际落地时，需要同时支持两类训练任务。
+实际落地时，需要同时支持三类训练任务。
 
 第一类是 Kubernetes 内的任务。用户通过 Pod + PVC 使用 JuiceFS，训练容器里看到的是一个普通文件系统路径。这类任务更适合平台化管理，挂载参数、权限、资源和生命周期都可以放在 Kubernetes 里统一控制。
 
-第二类是直接运行在机器上的训练任务。很多存量训练脚本不是一开始就容器化的，也不一定通过 PVC 获取数据。为了兼容这些任务，每台训练节点上会常驻一个 JuiceFS Client，把文件系统挂载到机器上的固定路径，训练进程直接读这个挂载点。
+第二类也是 Kubernetes 内的任务，但不通过 JuiceFS PVC，而是通过 hostPath 直接使用宿主机上已经挂载好的 JuiceFS 目录。对容器里的训练进程来说，它仍然看到一个普通目录；但对平台来说，这条路径绕过了 PVC 的挂载流程，实际依赖的是宿主机上的常驻 JuiceFS Client。
 
-所以这套方案不是只服务 Kubernetes，也不是只服务裸机。它更像是一层统一的数据访问能力：上层训练任务可以是 Pod，也可以是机器上的进程；底层都通过同一个 Cache Group 访问远端训练数据。
+第三类是直接运行在机器上的训练任务。很多存量训练脚本不是一开始就容器化的，也不一定通过 PVC 获取数据。为了兼容这些任务，每台训练节点上会常驻一个 JuiceFS Client，把文件系统挂载到机器上的固定路径，训练进程直接读这个挂载点。
+
+所以这套方案不是只服务 Kubernetes，也不是只服务裸机。它更像是一层统一的数据访问能力：上层训练任务可以是 PVC Pod、hostPath Pod，也可以是机器上的进程；底层都通过同一个 Cache Group 访问远端训练数据。
+
+## 挂载参数一致性
+
+引入 hostPath 之后，参数一致性会变成一个很现实的问题。
+
+Pod + PVC 方式下，JuiceFS 的挂载参数通常来自 PV / StorageClass / CSI 配置里的 `mountOptions`。Pod + hostPath 和裸机训练方式下，训练进程使用的是宿主机上已经挂载好的目录，参数来自宿主机上的 `juicefs mount` 命令或 systemd unit。
+
+这两条路径表面上都在访问同一个 JuiceFS 文件系统，但如果挂载参数不一致，实际行为可能不同。例如：
+
+- 一个入口配置了 `--cache-group=<name>`，另一个入口没有配置。
+- 一个入口配置了 `--no-sharing`，另一个入口没有配置。
+- 一个入口的 `--cache-dir` 指向并行文件系统路径，另一个入口使用了默认缓存目录。
+- 一个入口配置了不同的缓存大小、预读、buffer 或其他客户端参数。
+
+这些差异会让训练任务的读路径变得不可预测。用户可能以为自己在使用 Cache Group，实际却走了普通客户端缓存；也可能 PVC 任务和 hostPath 任务表现不一致，最后很难从任务侧判断问题出在哪里。
+
+因此，我们需要把 JuiceFS Client 的关键挂载参数沉淀成一份配置基线，让 PV 的 `mountOptions` 和宿主机上的 `juicefs mount` 命令保持一致。至少应该统一这些参数：
+
+```text
+--cache-group=<name>
+--no-sharing
+--cache-dir=/path/to/client-cache
+缓存容量相关参数
+预读、buffer、连接和超时相关参数
+```
+
+更理想的方式，是不要让这些参数分散在多个 YAML 和多个启动脚本里各自维护。可以把它们收敛到同一份模板或配置生成逻辑中：PVC 侧生成 `mountOptions`，宿主机侧生成 systemd unit，二者来自同一套参数源。
+
+这样做的目标不是追求形式统一，而是保证三种访问入口最终落到同一条数据路径上：Client 作为 `--no-sharing` 访问端接入同一个 Cache Group，客户端侧 `cache-dir` 指向同一类缓存承载路径，Cache Group 未命中时再回源到远端对象存储。
 
 ## 读路径拆解
 
@@ -212,13 +243,13 @@ WantedBy=multi-user.target
 
 这里最关键的是 `RequiresMountsFor=/path/to/client-cache`。它能把 `cache-dir` 的挂载依赖显式写进服务管理里，避免 JuiceFS 在依赖路径还没准备好时提前启动。
 
-在架构篇里，我们不把启动方式作为主角，但它决定了裸机训练方式能不能稳定运行。对于混合使用 Pod + PVC 和裸机训练的环境，这类细节会直接影响用户体验。
+在架构篇里，我们不把启动方式作为主角，但它决定了宿主机挂载能不能稳定运行。对于混合使用 Pod + PVC、Pod + hostPath 和裸机训练的环境，这类细节会直接影响用户体验。
 
 ## 小结
 
 这套架构的核心，是把远端对象存储上的训练数据前移到边缘训练集群内部。
 
-Cache Group 使用训练节点上的 NVMe 组成百 TB 级分布式缓存池，Client 通过 `--cache-group=<name>` 和 `--no-sharing` 作为访问端接入缓存组。Kubernetes 任务通过 Pod + PVC 使用，裸机任务通过节点上的常驻 JuiceFS Client 使用。训练前由平台创建 WarmUp CR，把数据预热进 Cache Group，减少训练运行阶段对远端对象存储的直接依赖。
+Cache Group 使用训练节点上的 NVMe 组成百 TB 级分布式缓存池，Client 通过 `--cache-group=<name>` 和 `--no-sharing` 作为访问端接入缓存组。Kubernetes 任务可以通过 Pod + PVC 使用，也可以通过 hostPath 复用宿主机挂载目录；裸机任务则通过节点上的常驻 JuiceFS Client 使用。训练前由平台创建 WarmUp CR，把数据预热进 Cache Group，减少训练运行阶段对远端对象存储的直接依赖。
 
 存量并行文件系统作为 Client `cache-dir`，是为了复用既有环境、兼容裸机任务，并避免客户端缓存和 Cache Group 争抢节点 NVMe。它不是这个架构的主要加速层，而是客户端侧缓存目录的承载层。
 
