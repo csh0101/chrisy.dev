@@ -1,0 +1,62 @@
+<svg width="1280" height="720" viewBox="0 0 1280 720" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1280" height="720" fill="#f7f8fb"/>
+  <rect x="64" y="72" width="1152" height="560" rx="24" fill="#ffffff" stroke="#d8dee9" stroke-width="2"/>
+  <text x="96" y="116" fill="#1f2937" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="28" font-weight="700">边缘训练集群内的 JuiceFS Cache Group 架构</text>
+  <text x="96" y="148" fill="#667085" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="16">匿名示意：隐藏云厂商、节点数量、设备名和真实路径，仅保留数据路径关系</text>
+
+  <rect x="96" y="196" width="792" height="340" rx="18" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="124" y="232" fill="#334155" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" font-weight="700">GPU 训练节点池</text>
+  <text x="124" y="258" fill="#64748b" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">数十台训练节点同时复用为 Cache Group 节点，集群内数据面走 IB 网络</text>
+
+  <rect x="132" y="298" width="210" height="156" rx="14" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+  <text x="160" y="330" fill="#0f172a" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700">训练任务</text>
+  <text x="160" y="362" fill="#475569" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">Pod + PVC</text>
+  <text x="160" y="388" fill="#475569" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">裸机 / 宿主机进程</text>
+  <text x="160" y="414" fill="#475569" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">读取 JuiceFS 挂载点</text>
+
+  <rect x="408" y="288" width="214" height="176" rx="14" fill="#ecfeff" stroke="#0891b2" stroke-width="2"/>
+  <text x="436" y="322" fill="#155e75" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700">JuiceFS Client</text>
+  <text x="436" y="354" fill="#155e75" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">--cache-group</text>
+  <text x="436" y="380" fill="#155e75" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">--no-sharing</text>
+  <text x="436" y="406" fill="#155e75" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">本机常驻挂载进程</text>
+
+  <rect x="672" y="278" width="174" height="88" rx="14" fill="#fefce8" stroke="#ca8a04" stroke-width="2"/>
+  <text x="700" y="313" fill="#854d0e" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700">Client cache-dir</text>
+  <text x="700" y="340" fill="#854d0e" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="14">存量并行文件系统</text>
+
+  <rect x="672" y="414" width="174" height="88" rx="14" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="700" y="449" fill="#1e40af" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="17" font-weight="700">NVMe Cache</text>
+  <text x="700" y="476" fill="#1e40af" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="14">百 TB 级缓存池</text>
+
+  <rect x="948" y="222" width="196" height="126" rx="16" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+  <text x="980" y="258" fill="#166534" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700">WarmUp CR</text>
+  <text x="980" y="290" fill="#166534" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">训练前预热</text>
+  <text x="980" y="316" fill="#166534" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">平台 API 创建</text>
+
+  <rect x="948" y="420" width="196" height="116" rx="16" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="980" y="456" fill="#9a3412" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="18" font-weight="700">远端对象存储</text>
+  <text x="980" y="488" fill="#9a3412" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">训练数据源</text>
+  <text x="980" y="514" fill="#9a3412" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">10Gbps 级专线回源</text>
+
+  <path d="M342 376H392" stroke="#475569" stroke-width="3" stroke-linecap="round"/>
+  <path d="M385 367L398 376L385 385" stroke="#475569" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <path d="M622 340H656" stroke="#ca8a04" stroke-width="3" stroke-linecap="round"/>
+  <path d="M649 331L662 340L649 349" stroke="#ca8a04" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="628" y="324" fill="#854d0e" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">先查</text>
+
+  <path d="M622 414C642 414 642 458 656 458" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>
+  <path d="M649 449L662 458L649 467" stroke="#2563eb" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="630" y="442" fill="#1e40af" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">未命中</text>
+
+  <path d="M948 286H874C846 286 846 428 846 458" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-dasharray="8 8"/>
+  <path d="M855 445L846 459L837 445" stroke="#16a34a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="858" y="394" fill="#166534" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">预热到缓存组</text>
+
+  <path d="M846 458H930" stroke="#ea580c" stroke-width="3" stroke-linecap="round"/>
+  <path d="M923 449L936 458L923 467" stroke="#ea580c" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="864" y="442" fill="#9a3412" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="13">回源</text>
+
+  <rect x="124" y="560" width="1020" height="40" rx="20" fill="#e0f2fe" stroke="#38bdf8" stroke-width="1"/>
+  <text x="154" y="586" fill="#075985" font-family="Inter, PingFang SC, Microsoft YaHei, sans-serif" font-size="15">读路径：训练任务 -> JuiceFS Client -> Client cache-dir -> Cache Group -> 远端对象存储；WarmUp 在训练前把热点数据前移到 Cache Group</text>
+</svg>

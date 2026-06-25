@@ -1,0 +1,225 @@
+import { Figure } from "@/components/mdx/article";
+import Table from "@/components/mdx/table";
+
+export const metadata = {
+    title: '基于 JuiceFS 企业版 Cache Group 的训练数据加速实践：架构篇',
+    date: '2026-06-25',
+    address: 'csh0101.cc',
+    summary: '在边缘训练集群中，用 JuiceFS 企业版 Cache Group、WarmUp CR 和两种挂载方式，为远端对象存储上的训练数据构建百 TB 级缓存能力。',
+    tags: [ 'AI Infra', 'Storage', 'JuiceFS', 'Kubernetes' ]
+}
+
+# 基于 JuiceFS 企业版 Cache Group 的训练数据加速实践：架构篇
+
+训练数据放在远端对象存储，训练任务跑在边缘 GPU 集群，这是很多 AI 平台都会遇到的形态。
+
+这个形态很自然：对象存储适合放海量数据，边缘 GPU 集群适合靠近用户和算力。但它也带来一个直接问题：训练启动后，如果大量样本都从远端对象存储实时读取，训练输入流水线很容易被回源链路、远端请求延迟和缓存未命中拖住。
+
+这篇文章记录一次基于 JuiceFS 企业版 Cache Group 的训练数据加速实践。为了避免暴露具体环境，文中的云厂商、节点数量、设备名、路径和业务名称都做了匿名处理。本文只讲架构设计和落地方式，性能观测、命中率、warmup 耗时和链路流量会放到下一篇调优文章里展开。
+
+## 背景：边缘训练集群读远端对象存储
+
+我们的训练集群有几个特点：
+
+- 训练数据来自远端对象存储。
+- 边缘集群通过 10Gbps 级专线访问远端数据源。
+- 集群内有 IB 数据面网络，带宽和延迟条件明显好于回源链路。
+- 每台 GPU 训练节点上都有一块大容量 NVMe，可以用于缓存。
+- 集群里已经存在一套并行文件系统，存量裸机任务也依赖它。
+- 业务既有 Kubernetes Pod + PVC 方式，也有直接在机器上启动训练进程的方式。
+
+这决定了方案的方向：不要让每个训练任务都在运行时直接打远端对象存储，而是把训练数据提前前移到边缘集群内部，让训练阶段尽量从集群内高速缓存读取。
+
+## 基础设施参数
+
+匿名后的基础设施参数大致如下：
+
+<Table
+    data={[
+        { item: '训练集群规模', value: '数十台 GPU 训练节点' },
+        { item: 'Cache Group 部署方式', value: '与 GPU 训练节点复用部署' },
+        { item: '单节点缓存介质', value: '每节点一块大容量 NVMe' },
+        { item: 'Cache Group 总容量', value: '百 TB 级分布式缓存池' },
+        { item: '远端数据源', value: '某云对象存储' },
+        { item: '回源链路', value: '10Gbps 级专线，近似独占' },
+        { item: '集群内数据面', value: 'IB 网络' },
+        { item: 'Client cache-dir', value: '存量并行文件系统挂载路径' },
+        { item: '业务使用方式', value: 'Kubernetes Pod + PVC；裸机 / 宿主机直接训练' },
+        { item: 'Client 模式', value: '--cache-group=<name> + --no-sharing' },
+    ]}
+    columns={[
+        { key: 'item', title: '项目', width: '220px' },
+        { key: 'value', title: '配置' },
+    ]}
+/>
+
+这里最重要的不是单个参数，而是两条链路的差异：
+
+```text
+回源链路：JuiceFS / Cache Group -> 远端对象存储
+集群内链路：JuiceFS Client -> Client cache-dir / Cache Group
+```
+
+回源走 10Gbps 级专线，集群内数据面走 IB 网络。Cache Group 的价值，正是利用这条集群内高速数据面，把训练过程中的热点读取留在边缘集群内部。
+
+## 整体架构
+
+整体架构可以分成四层：
+
+- 远端对象存储：训练数据的原始来源。
+- JuiceFS 企业版 Cache Group：部署在 GPU 训练节点上，使用每台节点的 NVMe 组成分布式缓存池。
+- JuiceFS Client：运行在训练节点侧，使用 `--cache-group=<name>` 接入缓存组，并通过 `--no-sharing` 作为访问端，不参与缓存数据构建。
+- 训练任务：既可以通过 Kubernetes Pod + PVC 访问，也可以在机器上直接读取 JuiceFS 挂载点。
+
+<Figure
+    src="/articles/juicefs-cache-group-training-architecture/cache-group-architecture.svg"
+    alt="JuiceFS Cache Group architecture for training data acceleration"
+    width={1280}
+    height={720}
+    caption="匿名后的训练数据加速架构：训练节点同时复用为 Cache Group 节点，Client 通过本地 cache-dir、Cache Group 和远端对象存储形成多级读取路径。"
+/>
+
+这个架构没有额外引入一批专用缓存服务器，而是复用 GPU 训练节点上的 NVMe。每台节点既可以运行训练任务，也可以提供一部分 Cache Group 缓存能力。
+
+这样做有两个好处。
+
+第一，缓存靠近计算。训练任务和 Cache Group 都在同一个边缘集群内，Client 到 Cache Group 的数据面走 IB 网络，不需要每次跨专线回源。
+
+第二，缓存容量可以随着训练节点规模自然扩展。每个节点贡献一块 NVMe，整体形成百 TB 级缓存池，适合承载训练数据集的热点部分。
+
+## 两种使用方式
+
+实际落地时，需要同时支持两类训练任务。
+
+第一类是 Kubernetes 内的任务。用户通过 Pod + PVC 使用 JuiceFS，训练容器里看到的是一个普通文件系统路径。这类任务更适合平台化管理，挂载参数、权限、资源和生命周期都可以放在 Kubernetes 里统一控制。
+
+第二类是直接运行在机器上的训练任务。很多存量训练脚本不是一开始就容器化的，也不一定通过 PVC 获取数据。为了兼容这些任务，每台训练节点上会常驻一个 JuiceFS Client，把文件系统挂载到机器上的固定路径，训练进程直接读这个挂载点。
+
+所以这套方案不是只服务 Kubernetes，也不是只服务裸机。它更像是一层统一的数据访问能力：上层训练任务可以是 Pod，也可以是机器上的进程；底层都通过同一个 Cache Group 访问远端训练数据。
+
+## 读路径拆解
+
+这个方案最容易被误解的地方，是把 Cache Group 当成唯一缓存层。
+
+实际读路径更接近这样：
+
+```text
+训练任务
+-> JuiceFS Client
+-> Client 内部缓存 / 内核缓存
+-> Client cache-dir
+-> JuiceFS Cache Group
+-> 远端对象存储
+```
+
+也就是说，JuiceFS Client 仍然有自己的客户端侧缓存能力。只是在本项目里，Client 的 `cache-dir` 没有直接使用节点上的 NVMe，而是指向存量并行文件系统的挂载路径。
+
+当训练任务读取数据时，Client 会先检查客户端侧缓存；如果客户端缓存未命中，再通过 Cache Group 访问边缘集群内的 NVMe 分布式缓存池；如果 Cache Group 也未命中，才会通过专线回源到远端对象存储。
+
+这个多级路径可以这样理解：
+
+<Table
+    data={[
+        { layer: 'Client cache-dir', role: '承载单个 Client 的客户端侧缓存', note: '复用存量并行文件系统路径，不占用节点 NVMe' },
+        { layer: 'Cache Group', role: '承载跨节点、跨任务的共享热点缓存', note: '使用训练节点 NVMe，走集群内 IB 数据面' },
+        { layer: '远端对象存储', role: '训练数据的最终来源', note: 'Cache Group 未命中时通过专线回源' },
+    ]}
+    columns={[
+        { key: 'layer', title: '层级', width: '180px' },
+        { key: 'role', title: '作用' },
+        { key: 'note', title: '说明' },
+    ]}
+/>
+
+这里的关键是边界要清楚：并行文件系统上的 `cache-dir` 不是 Cache Group 的替代品，它解决的是客户端侧缓存目录放在哪里的问题；Cache Group 解决的是多个训练任务之间如何复用边缘侧热点数据的问题。
+
+## 基于 WarmUp CR 的训练前预热
+
+如果只依赖训练任务运行时的被动缓存，第一次读取仍然可能打到远端对象存储。对于大数据集训练来说，这会把“搬数据”的成本放到训练阶段，影响任务启动和前几个 epoch 的稳定性。
+
+因此，我们把预热放在训练任务提交前。
+
+在平台侧，用户提交任务前可以选择对本次数据集路径进行预热。平台后端根据用户选择的数据路径，通过 Kubernetes API 创建 JuiceFS 的 WarmUp CR，由 Cache Group 侧完成数据拉取和缓存填充。
+
+这和让用户登录机器执行命令不同。用户不需要关心具体节点，也不需要知道 Cache Group 内部怎么调度。平台只暴露“对这个数据路径做预热”的入口，底层由 Kubernetes CR 和 JuiceFS 企业版 Cache Group 完成。
+
+预热流程大致是：
+
+```text
+用户选择数据集路径
+-> 平台创建 WarmUp CR
+-> Cache Group 从远端对象存储拉取数据
+-> 数据进入边缘集群内的 NVMe 缓存池
+-> 用户提交训练任务
+-> 训练读取尽量命中 Client cache-dir 或 Cache Group
+```
+
+这一步把远端读取从训练运行阶段前移到了任务准备阶段。对于用户来说，训练任务启动后更像是在读边缘集群内的缓存，而不是一边训练一边跨专线拉取全部数据。
+
+## 为什么保留并行文件系统作为 cache-dir
+
+一个自然的问题是：既然已经有 Cache Group，为什么 JuiceFS Client 还需要把 `cache-dir` 指向一套存量并行文件系统？
+
+这里有两个现实约束。
+
+第一，每台训练节点上的 NVMe 已经被统一纳入 Cache Group，用来构建稳定的共享缓存池。如果再让 JuiceFS Client 使用同一块 NVMe 作为本地缓存，就会让客户端缓存和 Cache Group 在同一块盘上争抢容量、IO 和淘汰空间。
+
+第二，存量裸机训练任务已经依赖并行文件系统的挂载路径。把 Client `cache-dir` 放在这条路径上，可以在不大幅改造节点目录和训练脚本的情况下，为 JuiceFS Client 提供一个统一的缓存承载位置。
+
+所以这个设计不是为了让并行文件系统替代 Cache Group，而是为了在既有基础设施上减少改造成本，同时把节点 NVMe 尽量留给 Cache Group 使用。
+
+当然，这也是一个工程取舍。并行文件系统和 Cache Group 都走集群内 IB 数据面，二者在网络资源上不是完全隔离的。因此在后续调优中，需要继续观察 Client cache-dir 的命中率、并行文件系统压力、IB 链路利用率和 Cache Group 命中情况，判断这个缓存层是否仍然值得保留。
+
+本文先记录架构选择。相关指标和判断方法，会在第二篇里展开。
+
+## 裸机挂载：从启动脚本到 systemd
+
+对于直接在机器上运行的训练任务，JuiceFS Client 需要在节点侧常驻挂载。早期方案通常会选择传统启动脚本，例如在机器启动时执行一段挂载命令。
+
+这种方式接入快，但长期看有几个运维问题：
+
+- 网络未就绪时，JuiceFS Client 可能启动失败。
+- 并行文件系统还没挂载时，`cache-dir` 路径可能不是预期的挂载点。
+- 进程异常退出后，缺少统一的自动拉起策略。
+- 日志、状态和失败原因不够集中。
+- 停机或重启时，卸载动作不够可控。
+
+更适合长期运维的方式，是把 JuiceFS 挂载进程交给 systemd 管理。它可以显式表达依赖关系，例如要求网络在线、并行文件系统路径已经挂载，再启动 JuiceFS Client。
+
+一个简化后的示意配置如下：
+
+```ini
+[Unit]
+Description=JuiceFS client mount
+After=network-online.target remote-fs.target
+Wants=network-online.target
+RequiresMountsFor=/path/to/client-cache
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/juicefs mount \
+  --cache-group=<name> \
+  --no-sharing \
+  --cache-dir=/path/to/client-cache \
+  <meta-url> /mnt/jfs
+ExecStop=/bin/fusermount -uz /mnt/jfs
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+这里最关键的是 `RequiresMountsFor=/path/to/client-cache`。它能把 `cache-dir` 的挂载依赖显式写进服务管理里，避免 JuiceFS 在依赖路径还没准备好时提前启动。
+
+在架构篇里，我们不把启动方式作为主角，但它决定了裸机训练方式能不能稳定运行。对于混合使用 Pod + PVC 和裸机训练的环境，这类细节会直接影响用户体验。
+
+## 小结
+
+这套架构的核心，是把远端对象存储上的训练数据前移到边缘训练集群内部。
+
+Cache Group 使用训练节点上的 NVMe 组成百 TB 级分布式缓存池，Client 通过 `--cache-group=<name>` 和 `--no-sharing` 作为访问端接入缓存组。Kubernetes 任务通过 Pod + PVC 使用，裸机任务通过节点上的常驻 JuiceFS Client 使用。训练前由平台创建 WarmUp CR，把数据预热进 Cache Group，减少训练运行阶段对远端对象存储的直接依赖。
+
+存量并行文件系统作为 Client `cache-dir`，是为了复用既有环境、兼容裸机任务，并避免客户端缓存和 Cache Group 争抢节点 NVMe。它不是这个架构的主要加速层，而是客户端侧缓存目录的承载层。
+
+下一篇会继续讨论怎么验证这套方案的效果：看哪些 JuiceFS 指标，怎么观察 WarmUp，如何对比回源链路和 IB 数据面，以及如何判断 Client cache-dir 是否仍然值得保留。
