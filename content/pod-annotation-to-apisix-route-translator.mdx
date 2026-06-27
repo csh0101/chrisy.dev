@@ -1,0 +1,355 @@
+import { Figure } from "@/components/mdx/article";
+
+export const metadata = {
+    title: '从 Pod Annotation 到 APISIX Route：写一个轻量级网关 Translator',
+    date: '2026-06-28',
+    address: 'csh0101.cc',
+    summary: 'APISIX Translator 监听带有 label/annotation 的 Pod，把暴露声明翻译成 APISIX route/upstream，并用 reconcile、精确归属和真实 E2E 把控制器边界做清楚。',
+    tags: [ 'Kubernetes', 'APISIX', 'Gateway', 'Platform Engineering' ]
+}
+
+# 从 Pod Annotation 到 APISIX Route：写一个轻量级网关 Translator
+
+在 Kubernetes 里暴露一个临时服务，常见路径很多：Ingress、Gateway API、APISIX CRD、Service + LoadBalancer，或者平台自己封一层。
+
+这些方案都能工作。但有些场景里，平台需要的是更小的一层能力：一个 Pod 只声明“我要把这个端口暴露出去”，平台帮它生成一个可访问的网关入口。用户不需要理解 APISIX Route、Upstream、Admin API，也不需要直接操作 APISIX 控制面。
+
+APISIX Translator 做的就是这件事。
+
+它监听多个 Kubernetes 集群里的 Pod，只接管带有指定 label 和 annotation 的 Pod，把 Pod 上的暴露声明翻译成 APISIX route/upstream，再通过 APISIX Admin API 写入 APISIX 控制面。APISIX Data Plane 部署在集群外，通过网络打通直接访问 PodIP:Port。
+
+最小链路长这样：
+
+```text
+Pod label + annotations
+  -> Translator watch Kubernetes API
+  -> global leader reconcile
+  -> APISIX Admin API
+  -> APISIX etcd
+  -> APISIX Data Plane
+  -> PodIP:Port
+```
+
+<Figure
+    src="/articles/pod-annotation-to-apisix-route-translator/translator-full-sequence.png"
+    alt="APISIX Translator full sequence"
+    width={1810}
+    height={2850}
+    caption="APISIX Translator v0 的完整链路：leader 选举、全量 reconcile、Pod 声明解析、APISIX Admin API 幂等写入、DP 配置同步、增量 watch、断联保护和异常切主。"
+/>
+
+这不是一个通用 Ingress Controller。v0 只处理一个小而完整的场景：一个 Pod 通过 annotation 声明一个或多个端口暴露规则，每条规则生成一个 APISIX route 和一个 upstream，upstream 指向这个 Pod 的 PodIP:Port。
+
+## 为什么从 Pod Annotation 开始
+
+第一版没有引入 Ingress、Gateway API 或 APISIX CRD。声明源只来自 Pod label 和 annotations。
+
+Pod 要被接管，先打一个 label：
+
+```yaml
+labels:
+  apisix-translator.io/enabled: "true"
+```
+
+暴露规则写在 annotation 里：
+
+```yaml
+annotations:
+  apisix-translator.io/routes: |
+    [
+      {
+        "name": "web",
+        "port": 8080
+      }
+    ]
+```
+
+`uri` 默认是 `/`，`host` 默认是 `auto`。如果用户不指定 host，Translator 会生成一个通配符域名下的稳定入口：
+
+```text
+{cluster}-{namespace}-{podName}-{routeName}-{hash}.gw.example.com
+```
+
+hash 来自：
+
+```text
+cluster + namespace + podUID + routeName
+```
+
+这里有一个刻意的选择：auto host 在同一个 Pod 生命周期内稳定，Pod 重建后会变化。因为 PodUID 变了，Translator 会把它当成新的来源对象。这样可以避开 Pod 重名、namespace 复用、旧对象残留带来的归属混乱。
+
+这个模型不适合所有网关场景。它适合平台内部的轻量暴露：用户只关心“这个 Pod 的这个端口能不能访问”，复杂路由、插件编排、灰度发布、认证限流先不进 v0。
+
+## Translator 只做翻译，不碰 APISIX etcd
+
+APISIX Translator 不直接写 APISIX etcd。它只通过 APISIX Admin API 创建、更新、删除 APISIX 对象。
+
+这个边界很重要。APISIX 控制面拥有自己的配置模型、校验逻辑和 Admin API 语义。Translator 如果绕过 Admin API 直接写 etcd，会把自己绑到 APISIX 的内部存储细节上，升级和排障都会变重。
+
+v0 只写两类对象：
+
+```text
+route
+upstream
+```
+
+每条暴露规则生成：
+
+```text
+1 个 APISIX route
+1 个 APISIX upstream
+```
+
+upstream 里只有一个 node：
+
+```text
+PodIP:Port
+```
+
+APISIX Data Plane 不暴露 Admin API。它只从 APISIX etcd watch 配置，然后接收 SLB 或 VIP 转发过来的请求，再按 route/upstream 访问 PodIP:Port。
+
+公网 TLS 也不放进 v0 的控制面里。推荐路径是：
+
+```text
+Client --HTTPS--> SLB --HTTP--> APISIX DP --HTTP--> PodIP:Port
+```
+
+SLB 终止公网 TLS，APISIX DP 不管理通配符证书。证书轮换、SNI、`X-Forwarded-Proto`、重定向和 TLS 排障都收在入口层。
+
+## 最容易写错的是删除
+
+网关控制器最危险的操作不是创建，而是删除。
+
+创建错了，通常只是多一个无效 route。删除错了，可能会把别人的线上入口删掉。
+
+Translator 创建的 APISIX route/upstream 必须带归属标签：
+
+```text
+managed_by = apisix-translator
+cluster
+namespace
+pod_name
+pod_uid
+route_name
+object_kind = route | upstream
+object_hash
+```
+
+删除时只允许按 `podUID + routeName` 精确删除当前 Pod 拥有的对象。
+
+禁止按 host 模糊删除，禁止按 uri 模糊删除，禁止删除没有 `managed_by=apisix-translator` 标记的对象，也禁止删除其他 PodUID 或其他 routeName 创建的对象。
+
+这条规则挡住的是几个真实风险：
+
+- Pod 名字复用。
+- namespace 删除后重建。
+- 用户手工创建了同 host 或同 uri 的 APISIX 对象。
+- 旧 Pod 的事件延迟到达。
+- Translator 重启后 cache 丢失。
+
+APISIX object id 也不直接拼完整来源路径。完整 `cluster/namespace/podName/podUID/routeName` 太长，也容易踩 APISIX object id 的字符限制。v0 使用短 hash：
+
+```text
+route id:    atr_r_{hash20}
+upstream id: atr_u_{hash20}
+```
+
+完整归属信息写进 labels，object id 只是稳定引用。
+
+## Reconcile 不等于 watch 回调
+
+很多控制器的第一版都会写成这样：
+
+```text
+watch Pod event
+  -> 收到 add/update/delete
+  -> 立刻调用 APISIX Admin API
+```
+
+这个模型早期好写，但真实环境会很快暴露问题。watch 会断，事件会堆积，进程会重启，Admin API 会失败，Kubernetes API 可能短时间不可用。
+
+Translator 把主路径设计成 reconcile：
+
+```text
+1. List enabled Pods
+2. 解析 annotations
+3. 计算 desired gateway state
+4. 查询 APISIX current managed state
+5. diff desired/current
+6. 生成 ReconcilePlan
+7. 幂等执行 create/update/delete
+```
+
+watch event 只负责触发。它不是事实源。
+
+事实源有两个：
+
+- Kubernetes 里当前带 enabled label 的 Pod。
+- APISIX 里当前由 Translator 管理的 route/upstream。
+
+进程内 cache 可以提高效率，但不能成为持久状态源。Translator 重启后，重新 List Kubernetes，重新 List APISIX，再 diff，就能恢复。
+
+写入顺序也有讲究：
+
+```text
+create/update:
+  upstream -> route
+
+delete:
+  route -> upstream
+```
+
+创建时先保证 upstream 存在，再让 route 指过去。删除时先删除入口 route，再删除后端 upstream。这样比“先 delete 再 create”稳定得多，也少制造短暂中断。
+
+每个 desired object 会计算一个 normalized config hash，并写入 APISIX labels。下次 reconcile 时，如果 current object 的 hash 没变，就跳过写入；如果 hash 变了，再 update。
+
+## Host + URI 冲突要显式拒绝
+
+v0 里，`host + uri` 是 route 唯一性边界。
+
+规则很简单：
+
+```text
+host + uri 完全相同：冲突
+host 相同，uri 不同：允许
+host 不同，uri 相同：允许
+```
+
+冲突时，Translator 不覆盖已有 route，不删除已有 route，也不写入当前冲突 route。它通过 Kubernetes Event 告诉用户：
+
+```text
+APISIXTranslatorRouteConflict
+```
+
+这比“后写者覆盖前写者”更适合平台场景。网关入口属于公共资源，控制器不能猜用户想让谁赢。
+
+`host=auto` 的场景基本不会冲突，因为 host 中带了来源 identity hash。显式 host 的场景才需要这条规则。
+
+## K8s Event 是反馈通道，不是主流程
+
+Translator 会用 Kubernetes Event 把 annotation 错误反馈给用户，例如：
+
+- routes 不是合法 JSON。
+- routes 数组为空。
+- route name 重复。
+- port 不合法。
+- uri 不以 `/` 开头。
+- host 不在允许的通配符域下。
+- host + uri 冲突。
+- PodIP 为空。
+- APISIX Admin API 写入失败。
+
+但 Event 写失败不应该阻断 reconcile。Event 是反馈通道，不是配置收敛的主路径。
+
+如果 APISIX Admin API 写失败，Translator 必须返回错误并重试。因为配置没有收敛。
+
+如果 Kubernetes Event 写失败，Translator 记录指标和日志，但不应该因此回滚或阻断 APISIX 写入。因为用户反馈失败和网关配置失败是两类问题。
+
+## K8s API 断联时不要删旧配置
+
+这是控制器设计里经常被低估的决策。
+
+Kubernetes API 断联时，Translator 不删除旧 APISIX route/upstream。
+
+原因很简单：断联期间，Translator 不知道 Kubernetes 的真实状态。它只能看到旧 cache。基于旧 cache 删除网关配置，很可能把仍然存活的业务入口删掉。
+
+断联时的策略是：
+
+```text
+标记 cluster degraded
+持续重试连接
+超过阈值后报警
+不断联删除
+恢复后触发 full reconcile
+```
+
+断联期间如果 Pod 已经死亡，旧 upstream 可能短暂保留。这个风险由 APISIX TCP healthcheck 兜底。v0 的健康检查只做四层 TCP connect，不要求每个业务提供 HTTP `/healthz`。
+
+这里的取舍是：宁可短时间保留一个可能不可达的旧 upstream，也不要在控制面失明时误删仍然有效的入口。
+
+## Watch 策略也踩过坑
+
+真实集群里不能随便 watch all Pods。
+
+Translator 的策略是：
+
+```text
+List:  使用 apisix-translator.io/enabled=true label selector
+Watch: 使用同一个 label selector，从当前 resourceVersion 开始
+```
+
+启动 watch 前，Translator 先用 label selector 做一次轻量 List，只为了拿当前 `resourceVersion`。然后从这个版本开始 watch enabled Pods。
+
+这么做是为了避免一启动就把集群里所有既有 enabled Pod 都当成初始事件，造成 APISIX Admin API 查询风暴。
+
+这里还有一个真实验证过的语义：当一个 Pod 原本匹配 label selector，后来移除了 enabled label，Kubernetes selector watch 会发出 `DELETED` 事件。Translator 可以把它当成快速删除信号。
+
+这条语义不能只靠想象。不同 Kubernetes 版本、不同 API 行为边界都值得保留真实 e2e 覆盖。即使某个环境以后不发这个 `DELETED` 事件，periodic full reconcile 仍然可以兜底，因为 desired state 来自“当前仍然 enabled 的 Pods”。
+
+## 真实 E2E 要证明整条链路
+
+本地 `make verify` 可以覆盖很多东西：领域模型、reconcile diff、fake e2e、adapter 测试、构建、配置校验。
+
+但它不能证明真实链路：
+
+```text
+Kubernetes -> Translator -> APISIX Admin API -> APISIX etcd -> DP -> PodIP
+```
+
+真实环境 E2E 需要单独入口，不混进默认门禁。它要证明几件事：
+
+- invalid annotation 会产生 Kubernetes Event，不创建 APISIX 对象。
+- 正常 Pod 会创建 route/upstream。
+- upstream 指向真实 PodIP:Port。
+- 两个 APISIX DP 节点都能用 generated Host 返回 200。
+- 移除 enabled label 会删除 owned route/upstream。
+- 删除 Pod 会删除 owned route/upstream。
+- 两个 Pod 使用相同 host + uri 时，第二个 Pod 被拒绝，第一个 route 保持不变。
+- 测试失败后也会清理临时 namespace 和 APISIX 残留对象。
+
+这些 case 证明的是“系统穿过真实网络和真实 APISIX 后仍然成立”。这和本地 fake e2e 是两种证据。
+
+真实 E2E 也不该假装覆盖了所有风险。长时间 watch 稳定性、APISIX Admin API 多端点 failover、SLB 通配符域名、Translator HA 在反复重启和网络分区下的表现，都需要后续单独验证。
+
+## SDK 只负责声明，不碰运行环境
+
+APISIX Translator 还有一个公开 Go SDK，用来帮助业务生成 annotation。
+
+<Figure
+    src="/articles/pod-annotation-to-apisix-route-translator/exposure-sdk-flow.svg"
+    alt="APISIX Translator exposure declaration SDK flow"
+    width={1180}
+    height={470}
+    caption="Exposure SDK 只生成 Pod metadata 声明并做本地校验，不连接 Kubernetes、APISIX 或 kubeconfig；运行时收敛仍由 Translator 完成。"
+/>
+
+这个 SDK 的边界很窄：
+
+- 生成 `apisix-translator.io/enabled=true`。
+- 生成 `apisix-translator.io/routes`。
+- 做本地字段校验。
+- 输出可贴到 Pod metadata 的 labels 和 annotations。
+
+它不拿 kubeconfig，不调用 Kubernetes API，不访问 APISIX Admin API，也不判断路由是否真的生效。
+
+这个边界能让 SDK 保持轻量。业务侧可以用它减少手写 JSON annotation 的错误，但真正的权限、冲突、写入、健康检查和反馈仍然由 Translator 处理。
+
+## 小结
+
+APISIX Translator v0 的价值不在于功能多，而在于边界清楚。
+
+用户用 Pod label 和 annotation 表达暴露意图。Translator 把它翻译成 APISIX route/upstream。APISIX Admin API 负责控制面写入。APISIX DP 负责转发流量。Kubernetes Event 负责反馈错误。Reconcile 负责在 watch 断开、进程重启、Admin API 抖动之后把状态拉回去。
+
+第一版没有追求大而全。它没有接 Ingress/Gateway API，没有写 APISIX etcd，没有做多 Pod upstream，没有引入复杂插件编排。
+
+它先把一条路径做实：
+
+```text
+一个 Pod
+  -> 一个声明
+  -> 一个 route
+  -> 一个 upstream
+  -> 一个可验证的 PodIP:Port
+```
+
+这类控制器真正难的地方，往往不在“怎么创建对象”，而在“什么时候不能删、怎么证明归属、如何从失败里恢复、哪些结论必须通过真实环境证明”。

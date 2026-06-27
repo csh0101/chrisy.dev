@@ -1,0 +1,191 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1810" height="2850" viewBox="0 0 1810 2850">
+<defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#333"/></marker></defs>
+<rect width="1810" height="2850" fill="#ffffff"/>
+<rect x="495" y="250" width="1280" height="1040" fill="#eaf7fb" opacity="0.75"/>
+<rect x="495" y="1290" width="1080" height="750" fill="#eaf8eb" opacity="0.75"/>
+<rect x="12" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="70" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator-1</text>
+<line x1="70" y1="68" x2="70" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="12" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="70" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator-1</text>
+<rect x="162" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="220" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator-2</text>
+<line x1="220" y1="68" x2="220" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="162" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="220" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator-2</text>
+<rect x="332" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="390" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator etcd</text>
+<text x="390" y="54" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">3台4c/4g</text>
+<line x1="390" y1="68" x2="390" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="332" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="390" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator etcd</text>
+<text x="390" y="2676" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">3台4c/4g</text>
+<rect x="502" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="560" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">多个 K8s API</text>
+<line x1="560" y1="68" x2="560" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="502" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="560" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">多个 K8s API</text>
+<rect x="832" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="890" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator Leader</text>
+<line x1="890" y1="68" x2="890" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="832" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="890" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Translator Leader</text>
+<rect x="1122" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1180" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX Admin API</text>
+<text x="1180" y="54" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">控制面3台8c/8g</text>
+<line x1="1180" y1="68" x2="1180" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="1122" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1180" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX Admin API</text>
+<text x="1180" y="2676" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">控制面3台8c/8g</text>
+<rect x="1282" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1340" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX etcd</text>
+<text x="1340" y="54" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">与控制面同3台</text>
+<line x1="1340" y1="68" x2="1340" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="1282" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1340" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX etcd</text>
+<text x="1340" y="2676" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">与控制面同3台</text>
+<rect x="1442" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1500" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX DP</text>
+<text x="1500" y="54" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">2台8c/8g</text>
+<line x1="1500" y1="68" x2="1500" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="1442" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1500" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">APISIX DP</text>
+<text x="1500" y="2676" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">2台8c/8g</text>
+<rect x="1662" y="18" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1720" y="38" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">PodIP:Port</text>
+<text x="1720" y="54" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">BGP可达</text>
+<line x1="1720" y1="68" x2="1720" y2="2640" stroke="#8b6ff5" stroke-width="1.2"/>
+<rect x="1662" y="2640" width="116" height="50" rx="3" fill="#f0eaff" stroke="#8b6ff5"/>
+<text x="1720" y="2660" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">PodIP:Port</text>
+<text x="1720" y="2676" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">BGP可达</text>
+<line x1="70" y1="92" x2="390" y2="92" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="230" y="84" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">申请全局 leader lease</text>
+<circle cx="70" cy="92" r="8" fill="#333"/><text x="70" y="96" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">1</text>
+<line x1="220" y1="132" x2="390" y2="132" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="305" y="124" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">申请全局 leader lease</text>
+<circle cx="220" cy="132" r="8" fill="#333"/><text x="220" y="136" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">2</text>
+<line x1="390" y1="172" x2="70" y2="172" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="230" y="164" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">获得 leader</text>
+<circle cx="390" cy="172" r="8" fill="#333"/><text x="390" y="176" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">3</text>
+<line x1="390" y1="212" x2="220" y2="212" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="305" y="204" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">standby，续租观察</text>
+<circle cx="390" cy="212" r="8" fill="#333"/><text x="390" y="216" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">4</text>
+<line x1="70" y1="252" x2="890" y2="252" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="480" y="244" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">进入 leader 工作循环</text>
+<circle cx="70" cy="252" r="8" fill="#333"/><text x="70" y="256" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">5</text>
+<rect x="545" y="272" width="360" height="30" rx="3" fill="#fff4a3" stroke="#d6b656"/>
+<text x="725" y="292" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="600" fill="#333">启动或定期全量 reconcile</text>
+<line x1="890" y1="332" x2="560" y2="332" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="725" y="324" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">List Pods，筛选 label apisix-translator/enabled=true</text>
+<circle cx="890" cy="332" r="8" fill="#333"/><text x="890" y="336" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">6</text>
+<line x1="560" y1="382" x2="890" y2="382" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="725" y="374" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">返回 Pod + annotations + PodIP + ports</text>
+<circle cx="560" cy="382" r="8" fill="#333"/><text x="560" y="386" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">7</text>
+<line x1="890" y1="452" x2="928" y2="452" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="444" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">解析 apisix-translator.io/routes</text>
+<path d="M928 452 L928 480 L898 480" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="452" r="8" fill="#333"/><text x="890" y="456" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">8</text>
+<line x1="890" y1="562" x2="928" y2="562" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="554" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">默认 uri=/，host=auto 生成 *.gw.example.com</text>
+<path d="M928 562 L928 590 L898 590" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="562" r="8" fill="#333"/><text x="890" y="566" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">9</text>
+<line x1="890" y1="672" x2="928" y2="672" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="664" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">计算 route/upstream ID 与 desired state</text>
+<path d="M928 672 L928 700 L898 700" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="672" r="8" fill="#333"/><text x="890" y="676" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">10</text>
+<line x1="890" y1="782" x2="1180" y2="782" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1035" y="774" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">查询 owner=translator 的 APISIX 对象</text>
+<circle cx="890" cy="782" r="8" fill="#333"/><text x="890" y="786" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">11</text>
+<line x1="1180" y1="832" x2="890" y2="832" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="1035" y="824" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">返回 current state</text>
+<circle cx="1180" cy="832" r="8" fill="#333"/><text x="1180" y="836" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">12</text>
+<line x1="890" y1="902" x2="928" y2="902" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="894" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">diff desired vs current</text>
+<path d="M928 902 L928 930 L898 930" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="902" r="8" fill="#333"/><text x="890" y="906" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">13</text>
+<rect x="545" y="955" width="1160" height="360" fill="none" stroke="#8b6ff5" stroke-dasharray="3 3"/>
+<text x="553" y="969" font-family="PingFang SC, Arial, sans-serif" font-size="11" fill="#6b55d9">alt</text>
+<text x="1190" y="973" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">[host + uri 冲突]</text>
+<line x1="890" y1="1032" x2="560" y2="1032" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="725" y="1024" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">记录 Event/状态，不覆盖已有 route</text>
+<circle cx="890" cy="1032" r="8" fill="#333"/><text x="890" y="1036" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">14</text>
+<text x="1170" y="1113" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">[无冲突]</text>
+<line x1="890" y1="1128" x2="1180" y2="1128" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1035" y="1120" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">PUT / PATCH upstream：PodIP:Port</text>
+<circle cx="890" cy="1128" r="8" fill="#333"/><text x="890" y="1132" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">15</text>
+<line x1="1180" y1="1178" x2="1340" y2="1178" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1260" y="1170" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">写入 upstream 配置</text>
+<circle cx="1180" cy="1178" r="8" fill="#333"/><text x="1180" y="1182" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">16</text>
+<line x1="890" y1="1248" x2="1180" y2="1248" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1035" y="1240" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">PUT / PATCH route：host + uri + upstream_id</text>
+<circle cx="890" cy="1248" r="8" fill="#333"/><text x="890" y="1252" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">17</text>
+<line x1="1180" y1="1298" x2="1340" y2="1298" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1260" y="1290" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">写入 route 配置</text>
+<circle cx="1180" cy="1298" r="8" fill="#333"/><text x="1180" y="1302" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">18</text>
+<line x1="1340" y1="1348" x2="1500" y2="1348" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="1420" y="1340" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">DP watch 到新配置</text>
+<circle cx="1340" cy="1348" r="8" fill="#333"/><text x="1340" y="1352" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">19</text>
+<line x1="1500" y1="1398" x2="1720" y2="1398" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1610" y="1390" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">后续业务流量按 PodIP:Port 转发</text>
+<circle cx="1500" cy="1398" r="8" fill="#333"/><text x="1500" y="1402" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">20</text>
+<rect x="545" y="1438" width="360" height="30" rx="3" fill="#fff4a3" stroke="#d6b656"/>
+<text x="725" y="1458" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="600" fill="#333">watch 增量变化</text>
+<line x1="890" y1="1498" x2="560" y2="1498" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="725" y="1490" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Watch Pods across clusters</text>
+<circle cx="890" cy="1498" r="8" fill="#333"/><text x="890" y="1502" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">21</text>
+<line x1="560" y1="1548" x2="890" y2="1548" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="725" y="1540" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Pod add/update/delete event</text>
+<circle cx="560" cy="1548" r="8" fill="#333"/><text x="560" y="1552" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">22</text>
+<rect x="820" y="1620" width="735" height="520" fill="none" stroke="#8b6ff5" stroke-dasharray="3 3"/>
+<text x="828" y="1634" font-family="PingFang SC, Arial, sans-serif" font-size="11" fill="#6b55d9">alt</text>
+<text x="1150" y="1638" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">[Pod add/update 且 label 存在]</text>
+<line x1="890" y1="1690" x2="928" y2="1690" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="1682" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">重新解析 annotations，生成 desired object</text>
+<path d="M928 1690 L928 1718 L898 1718" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="1690" r="8" fill="#333"/><text x="890" y="1694" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">23</text>
+<line x1="890" y1="1760" x2="1180" y2="1760" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1035" y="1752" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">Upsert route / upstream</text>
+<circle cx="890" cy="1760" r="8" fill="#333"/><text x="890" y="1764" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">24</text>
+<line x1="1180" y1="1810" x2="1340" y2="1810" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1260" y="1802" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">更新 APISIX 配置</text>
+<circle cx="1180" cy="1810" r="8" fill="#333"/><text x="1180" y="1814" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">25</text>
+<line x1="1340" y1="1860" x2="1500" y2="1860" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="1420" y="1852" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">DP 动态加载配置</text>
+<circle cx="1340" cy="1860" r="8" fill="#333"/><text x="1340" y="1864" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">26</text>
+<text x="1180" y="1923" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">[明确收到 Pod delete 或 label/annotation 删除]</text>
+<line x1="890" y1="1940" x2="1180" y2="1940" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1035" y="1932" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">删除该 Pod UID 归属的 route/upstream</text>
+<circle cx="890" cy="1940" r="8" fill="#333"/><text x="890" y="1944" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">27</text>
+<line x1="1180" y1="1990" x2="1340" y2="1990" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="1260" y="1982" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">删除 APISIX 配置</text>
+<circle cx="1180" cy="1990" r="8" fill="#333"/><text x="1180" y="1994" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">28</text>
+<line x1="1340" y1="2040" x2="1500" y2="2040" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="1420" y="2032" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">DP 移除配置</text>
+<circle cx="1340" cy="2040" r="8" fill="#333"/><text x="1340" y="2044" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">29</text>
+<text x="1170" y="2098" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">[K8s API 断联]</text>
+<line x1="890" y1="2115" x2="928" y2="2115" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="909" y="2107" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">标记 cluster degraded</text>
+<path d="M928 2115 L928 2143 L898 2143" fill="none" stroke="#333" stroke-width="1.2" marker-end="url(#arr)"/>
+<circle cx="890" cy="2115" r="8" fill="#333"/><text x="890" y="2119" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">30</text>
+<rect x="875" y="2170" width="320" height="30" rx="3" fill="#fff4a3" stroke="#d6b656"/>
+<text x="1035" y="2190" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="600" fill="#333">不删除任何旧 route/upstream，等待恢复后全量 reconcile</text>
+<rect x="385" y="2240" width="530" height="120" fill="none" stroke="#8b6ff5" stroke-dasharray="3 3"/>
+<text x="393" y="2254" font-family="PingFang SC, Arial, sans-serif" font-size="11" fill="#6b55d9">loop [leader lease 续租]</text>
+<line x1="890" y1="2292" x2="390" y2="2292" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="640" y="2284" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">keepalive lease</text>
+<circle cx="890" cy="2292" r="8" fill="#333"/><text x="890" y="2296" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">31</text>
+<line x1="390" y1="2342" x2="890" y2="2342" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="640" y="2334" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">lease ok</text>
+<circle cx="390" cy="2342" r="8" fill="#333"/><text x="390" y="2346" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">32</text>
+<rect x="185" y="2375" width="1020" height="185" fill="none" stroke="#8b6ff5" stroke-dasharray="3 3"/>
+<text x="193" y="2389" font-family="PingFang SC, Arial, sans-serif" font-size="11" fill="#6b55d9">alt [leader 异常或 lease 过期]</text>
+<line x1="390" y1="2420" x2="220" y2="2420" stroke="#333" stroke-width="1.2" stroke-dasharray="4 4" marker-end="url(#arr)"/>
+<text x="305" y="2412" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">standby 竞选成为新 leader</text>
+<circle cx="390" cy="2420" r="8" fill="#333"/><text x="390" y="2424" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">33</text>
+<line x1="220" y1="2470" x2="560" y2="2470" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="390" y="2462" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">重新 List 全量 Pods</text>
+<circle cx="220" cy="2470" r="8" fill="#333"/><text x="220" y="2474" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">34</text>
+<line x1="220" y1="2520" x2="1180" y2="2520" stroke="#333" stroke-width="1.2"  marker-end="url(#arr)"/>
+<text x="700" y="2512" text-anchor="middle" font-family="PingFang SC, Arial, sans-serif" font-size="12" font-weight="400" fill="#333">重新 reconcile desired/current</text>
+<circle cx="220" cy="2520" r="8" fill="#333"/><text x="220" y="2524" text-anchor="middle" font-family="Arial" font-size="9" fill="#fff">35</text>
+</svg>
