@@ -1,0 +1,264 @@
+import { Figure } from "@/components/mdx/article";
+import Table from "@/components/mdx/table";
+
+export const metadata = {
+    title: 'Volcano 遇到 OpenEBS LocalPV：一次由 CSINode 误解引出的调度问题',
+    date: '2026-07-01',
+    address: 'csh0101.cc',
+    summary: '记录一次 Volcano 调度 OpenEBS LocalPV PVC 时被 attachable volume capacity 过滤的问题：为什么 openebs.io/local 不出现在 CSINode 是正常的，以及为什么 ignored-provisioners 才是正确修复方向。',
+    tags: [ 'Kubernetes', 'Storage', 'CSI', 'OpenEBS', 'Volcano' ]
+}
+
+# Volcano 遇到 OpenEBS LocalPV：一次由 CSINode 误解引出的调度问题
+
+这次问题一开始看起来像一个很普通的存储排障：Pod 挂着 PVC 起不来，调度器提示候选节点被过滤，日志里出现了一个很像 Kubernetes 原生资源的名字：
+
+```text
+attachable-volumes-csi-openebs.io/local
+```
+
+第一反应很容易是：是不是 OpenEBS 的 CSI Driver 没有在节点上注册？是不是 `CSINode` 里应该有 `openebs.io/local`，但实际没有？如果顺着这个方向查，就会越查越拧巴。
+
+真正的结论反而简单：
+
+```text
+openebs.io/local 不出现在 CSINode 里是正常的。
+这次卡住不是 OpenEBS 少了 CSINode，而是 Volcano 把 openebs.io/local 当成了需要参与 CSI attach capacity 判断的 provisioner。
+```
+
+最后的修复方式，是在 Volcano 里忽略这个 provisioner：
+
+```text
+--ignored-provisioners=openebs.io/local
+```
+
+这篇文章记录这个问题是怎么定位的，也顺手把 `CSINode`、CSI Node Plugin、provisioner、OpenEBS LocalPV 和 Volcano 的交互流程捋清楚。
+
+## 现场现象
+
+业务 Pod 使用的 PVC 来自 OpenEBS LocalPV，StorageClass 的 provisioner 类似这样：
+
+```yaml
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: openebs-local
+provisioner: openebs.io/local
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+```
+
+PVC 不是提前随便绑定到某台机器，而是等 Pod 调度时再决定节点。也就是 `WaitForFirstConsumer` 这条路径：调度器先选节点，PVC 上会出现 `volume.kubernetes.io/selected-node`，provisioner 再根据这个节点创建本地 PV，并给 PV 写入 node affinity。
+
+问题出在 Volcano 调度阶段。它在做 capacity / volume 相关判断时，推导出了一个资源维度：
+
+```text
+attachable-volumes-csi-openebs.io/local
+```
+
+但是节点真实能力里并没有这个资源。于是候选节点被过滤，Pod 卡在调度前面。
+
+这里最迷惑人的地方，是这个名字长得很像 “Kubernetes 节点上应该有的 CSI 可挂载卷资源”。如果再看到 `CSINode` 里没有 `openebs.io/local`，就很容易把因果关系接错：
+
+```text
+误判链路：
+Pod 调度失败
+-> Volcano 提到 attachable-volumes-csi-openebs.io/local
+-> CSINode 里没有 openebs.io/local
+-> OpenEBS CSI Node Plugin 没注册？
+```
+
+但这条链路的最后一步是错的。
+
+## 标准 CSI 路径里，CSINode 是怎么来的
+
+先看标准 CSI Driver 的交互。
+
+CSI 是 Kubernetes 和存储系统之间的标准接口。典型 CSI Driver 会拆成两块：Controller 负责创建、删除、扩容、attach 等控制面动作；Node Plugin 以 DaemonSet 跑在每台节点上，负责节点侧的 mount / publish 动作。
+
+<Figure
+    src="/articles/volcano-openebs-localpv-csinode/standard-csi-flow.svg"
+    alt="Standard CSI driver flow with CSINode registration"
+    width={1200}
+    height={640}
+    caption="标准 CSI Driver 路径：node-driver-registrar 把节点上的 CSI Driver 注册给 kubelet，kubelet 自动维护 CSINode.spec.drivers。"
+/>
+
+`CSINode` 不是 provisioner 自己随手创建的“说明书”，它记录的是每个节点上通过 kubelet 注册过的 CSI driver。通常有这么几个关键动作：
+
+1. CSI Node Plugin 在节点上提供 Unix socket。
+2. `node-driver-registrar` 通过 kubelet plugin registration 机制注册这个 driver。
+3. kubelet 识别到该节点安装了某个 CSI driver。
+4. kubelet 把 driver 信息写入同名的 `CSINode` 对象。
+
+所以你在 `CSINode.spec.drivers` 里看到的，通常是这些真正有节点侧 CSI Plugin 的 driver：
+
+```text
+csi.juicefs.com
+csi.cdsplugin
+ebs.csi.aws.com
+diskplugin.csi.alibabacloud.com
+```
+
+它们的共同点是：节点上有 CSI Node Plugin，有注册 socket，kubelet 能感知到 driver 的存在。这样 `CSINode` 才有东西可写。
+
+这也是为什么排查 CSI Driver 时，常见命令是：
+
+```bash
+kubectl get csidrivers
+kubectl get csinodes
+kubectl describe csinode <node-name>
+kubectl get volumeattachments
+```
+
+这些命令适合检查标准 CSI Driver 的注册、节点能力和 attach 状态。
+
+## OpenEBS LocalPV 不是这条路径
+
+OpenEBS LocalPV 的 `openebs.io/local` 更像一个 local PV provisioner / controller。它的职责不是在每台节点上注册一个 CSI Node Plugin，然后让 kubelet 通过 CSI socket 调它。
+
+它更接近这条路径：
+
+<Figure
+    src="/articles/volcano-openebs-localpv-csinode/openebs-localpv-flow.svg"
+    alt="OpenEBS LocalPV provisioner flow"
+    width={1200}
+    height={620}
+    caption="OpenEBS LocalPV 路径：controller 监听 PVC，根据 selected-node 创建带 nodeAffinity 的本地 PV；Pod 最终在对应节点上使用 local / hostPath 语义挂载。"
+/>
+
+在这条路径里，OpenEBS LocalPV 的关键动作是：
+
+- 监听 PVC。
+- 等待调度器选出节点。
+- 根据 `selected-node` 在对应节点上创建本地 PV。
+- 给 PV 写入 node affinity，让后续 Pod 必须落到这台节点。
+- Pod 启动后使用节点本地路径，语义上更接近 local / hostPath。
+
+这条链路不需要 CSI attach / detach，也不需要每台节点都注册一个 CSI driver。因此 `openebs.io/local` 不出现在 `CSINode` 里，不代表 OpenEBS 不完整，也不代表节点少部署了什么组件。
+
+可以把两条路径压成一张表：
+
+<Table
+    data={[
+        { item: '标准 CSI Driver', trigger: 'PVC 由 external-provisioner 触发 CreateVolume', node: '每台节点有 CSI Node Plugin 和 node-driver-registrar', csinode: '会进入 CSINode.spec.drivers', mount: 'kubelet 调 CSI NodePublishVolume / NodeStageVolume' },
+        { item: 'OpenEBS openebs.io/local', trigger: 'OpenEBS local provisioner/controller 监听 PVC', node: '不依赖每台节点注册 CSI Driver', csinode: '不会出现在 CSINode 里是正常现象', mount: '通过 local / hostPath 类语义使用节点本地路径' },
+    ]}
+    columns={[
+        { key: 'item', title: '路径', width: '190px' },
+        { key: 'trigger', title: '供给方式' },
+        { key: 'node', title: '节点侧组件' },
+        { key: 'csinode', title: 'CSINode 表现' },
+        { key: 'mount', title: '挂载语义' },
+    ]}
+/>
+
+所以这次排障里，`CSINode` 是一个容易误导人的入口。它能说明“节点上注册了哪些 CSI driver”，但不能反推出“所有 StorageClass provisioner 都必须出现在这里”。
+
+## Volcano 为什么会误伤
+
+Volcano 做批任务调度时，会额外计算一些资源和容量维度。它看到 PVC 的 StorageClass provisioner 是 `openebs.io/local` 后，把它纳入了 attachable volume capacity 的判断，推导出：
+
+```text
+attachable-volumes-csi-openebs.io/local
+```
+
+这个名字很像 Kubernetes 对 CSI attachable volume 的资源表达，但在这个场景里它不是 OpenEBS 真正要求节点提供的能力，而是 Volcano 调度逻辑推导出来的一个“可挂载卷资源维度”。
+
+问题就在这里：真实节点上没有这个资源，也不应该因为 OpenEBS LocalPV 去提供这个资源。OpenEBS LocalPV 自己靠 `selected-node` 和 PV `nodeAffinity` 约束 Pod 落点，不靠 CSI attach capacity 控制。
+
+<Figure
+    src="/articles/volcano-openebs-localpv-csinode/volcano-mismatch-fix.svg"
+    alt="Volcano OpenEBS LocalPV attachable volume capacity mismatch and fix"
+    width={1200}
+    height={720}
+    caption="问题核心：Volcano 把 openebs.io/local 纳入 CSI attachable volume capacity 判断，节点上却不存在这个资源；修复是让 Volcano 忽略这个 provisioner。"
+/>
+
+因此这不是“给 OpenEBS 补一个 CSINode”的问题，而是“不要让 Volcano 用 CSI attachable volume 的方式理解 OpenEBS LocalPV”。
+
+## 修复方式
+
+修复方式是在 Volcano 相关组件参数里加入：
+
+```text
+--ignored-provisioners=openebs.io/local
+```
+
+这句话的含义是：
+
+```text
+openebs.io/local 这个 provisioner 不参与 Volcano 的 attachable volume capacity 判断。
+```
+
+加完后，Volcano 不再把 PVC 推导成 `attachable-volumes-csi-openebs.io/local` 这样的候选节点过滤条件。OpenEBS LocalPV 仍然按自己的方式工作：
+
+1. Pod 带着 PVC 进入调度。
+2. Volcano 选择一个满足 CPU、内存、队列策略等条件的节点。
+3. PVC 得到 `selected-node`。
+4. OpenEBS LocalPV provisioner 根据 selected node 创建 PV。
+5. PV 带 node affinity，确保 Pod 最终落到拥有该本地路径的节点。
+
+这才是这类本地卷应该走的控制链路。
+
+## 我最后怎么判断修复是对的
+
+可以按下面几组命令确认方向：
+
+```bash
+# 看 StorageClass 是不是 openebs.io/local
+kubectl get storageclass openebs-local -o yaml
+
+# 看 PVC 是否进入 WaitForFirstConsumer / selected-node 相关路径
+kubectl describe pvc <pvc-name>
+
+# 看 PV 是否带节点亲和性
+kubectl get pv <pv-name> -o yaml
+
+# 看 CSINode：确认这里没有 openebs.io/local 也不作为异常处理
+kubectl get csinode <node-name> -o yaml
+
+# 看 Volcano 参数是否已经忽略这个 provisioner
+kubectl -n volcano-system get deploy -o yaml | grep -n "ignored-provisioners"
+```
+
+判断重点不是“让 `openebs.io/local` 出现在 `CSINode` 中”，而是确认三件事：
+
+- Volcano 不再用 `attachable-volumes-csi-openebs.io/local` 过滤节点。
+- OpenEBS LocalPV 能基于 selected node 创建 PV。
+- PV 的 node affinity 能把 Pod 限定到正确节点。
+
+## 小结
+
+这次问题最容易踩的坑，是把三个概念混到一起：
+
+<Table
+    data={[
+        { name: 'provisioner', meaning: 'StorageClass 里的动态供给者名称', trap: '不等于一定有节点侧 CSI Plugin' },
+        { name: 'CSI Node Plugin', meaning: '跑在每个节点上的 CSI 节点侧服务', trap: '只有注册给 kubelet 后才会进入 CSINode' },
+        { name: 'CSINode', meaning: 'Kubernetes 记录节点上已注册 CSI driver 的对象', trap: '不是所有 StorageClass provisioner 的清单' },
+        { name: 'OpenEBS LocalPV', meaning: '本地 PV 动态供给路径', trap: '靠 selected-node 和 PV nodeAffinity，而不是 CSI attach capacity' },
+        { name: 'Volcano ignored-provisioners', meaning: '告诉 Volcano 某些 provisioner 不参与 attachable volume capacity 判断', trap: '这是调度侧修复，不是存储侧补丁' },
+    ]}
+    columns={[
+        { key: 'name', title: '概念', width: '210px' },
+        { key: 'meaning', title: '它是什么' },
+        { key: 'trap', title: '容易误解的点' },
+    ]}
+/>
+
+一句话收束：
+
+```text
+CSINode 记录的是节点上注册过的 CSI Driver；
+openebs.io/local 是 OpenEBS LocalPV 的 provisioner；
+它不进 CSINode 是正常的；
+Volcano 需要忽略它的 attachable volume capacity 判断。
+```
+
+参考资料：
+
+- [容器存储接口（CSI） - Jimmy Song](https://jimmysong.io/zh/book/kubernetes-handbook/interfaces/csi/)
+- [Kubernetes 存储革命：深度解析 CSI 模型与生产实践](https://www.cnblogs.com/leojazz/p/18772120)
+- [Kubernetes CSINode API Reference](https://kubernetes.io/docs/reference/kubernetes-api/storage/csi-node-v1/)
+- [OpenEBS Local PV Hostpath 文档](https://openebs.io/docs/user-guides/local-storage-user-guide/local-pv-hostpath/configuration/hostpath-create-storageclass)

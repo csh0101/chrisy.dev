@@ -1,0 +1,81 @@
+<svg width="1200" height="640" viewBox="0 0 1200 640" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="640" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F7FAFC"/>
+      <stop offset="1" stop-color="#EEF7F4"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#243B53" flood-opacity="0.13"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2 2L10 6L2 10" stroke="#36556D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <style>
+      .title { font: 700 30px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #102A43; }
+      .subtitle { font: 500 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #526D82; }
+      .lane { font: 700 16px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #486581; letter-spacing: .04em; }
+      .box-title { font: 700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #102A43; }
+      .box-text { font: 500 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #486581; }
+      .small { font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #627D98; }
+      .code { font: 600 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #334E68; }
+      .arrow { stroke: #36556D; stroke-width: 2.5; marker-end: url(#arrow); }
+      .dash { stroke: #829AB1; stroke-width: 2; stroke-dasharray: 7 8; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1200" height="640" rx="32" fill="url(#bg)"/>
+  <text class="title" x="58" y="72">标准 CSI Driver 的节点注册路径</text>
+  <text class="subtitle" x="58" y="102">只有节点上真实注册过的 CSI driver，才会进入 CSINode.spec.drivers。</text>
+
+  <rect x="56" y="140" width="300" height="410" rx="22" fill="#E8F1F8" stroke="#BCCCDC"/>
+  <rect x="450" y="140" width="300" height="410" rx="22" fill="#EAF7F0" stroke="#B7D7C2"/>
+  <rect x="844" y="140" width="300" height="410" rx="22" fill="#FFF7E6" stroke="#E9D8A6"/>
+  <text class="lane" x="86" y="178">CONTROL PLANE</text>
+  <text class="lane" x="480" y="178">WORKER NODE</text>
+  <text class="lane" x="874" y="178">KUBERNETES API</text>
+
+  <g filter="url(#shadow)">
+    <rect x="92" y="218" width="228" height="86" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="116" y="252">PVC</text>
+    <text class="box-text" x="116" y="278">用户声明需要持久卷</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="92" y="352" width="228" height="100" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="116" y="386">external-provisioner</text>
+    <text class="box-text" x="116" y="412">监听 PVC</text>
+    <text class="box-text" x="116" y="434">调用 CSI Controller</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="486" y="216" width="228" height="92" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="510" y="250">CSI Node Plugin</text>
+    <text class="box-text" x="510" y="276">提供节点侧 CSI socket</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="486" y="354" width="228" height="98" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="510" y="388">node-driver-registrar</text>
+    <text class="box-text" x="510" y="414">把 driver 注册给 kubelet</text>
+    <text class="code" x="510" y="438">/plugins_registry/*.sock</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="880" y="214" width="228" height="100" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="904" y="248">CSIDriver</text>
+    <text class="box-text" x="904" y="274">集群级 driver 信息</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="880" y="354" width="228" height="112" rx="16" fill="#FFFFFF"/>
+    <text class="box-title" x="904" y="388">CSINode</text>
+    <text class="code" x="904" y="414">spec.drivers[]</text>
+    <text class="box-text" x="904" y="440">由 kubelet 自动维护</text>
+  </g>
+
+  <path class="arrow" d="M320 402H486"/>
+  <path class="arrow" d="M600 308V354"/>
+  <path class="arrow" d="M714 404H880"/>
+  <path class="dash" d="M994 354V314"/>
+  <text class="small" x="738" y="386">注册成功后写入</text>
+  <text class="small" x="515" y="332">GetPluginInfo / register</text>
+  <text class="small" x="344" y="386">CreateVolume / PV</text>
+
+  <rect x="92" y="500" width="1016" height="64" rx="16" fill="#FFFFFF" stroke="#D9E2EC"/>
+  <text class="code" x="118" y="537">csi.juicefs.com / ebs.csi.aws.com / diskplugin.csi.alibabacloud.com</text>
+  <text class="small" x="118" y="558">这些名字会出现在 CSINode 里，是因为节点上确实注册了对应 CSI Node Plugin。</text>
+</svg>
